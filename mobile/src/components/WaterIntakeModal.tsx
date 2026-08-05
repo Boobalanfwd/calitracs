@@ -7,7 +7,7 @@ import {
   TouchableOpacity,
   TextInput,
   ScrollView,
-  TouchableWithoutFeedback,
+  Pressable,
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
@@ -87,185 +87,206 @@ export const WaterIntakeModal: React.FC<Props> = ({ visible, onClose }) => {
       transparent={true}
       onRequestClose={onClose}
     >
-      <TouchableWithoutFeedback onPress={onClose}>
-        <View style={styles.backdrop}>
-          <TouchableWithoutFeedback>
-            <KeyboardAvoidingView
-              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-              style={styles.modalCard}
-            >
-              {/* Header Bar */}
-              <View style={styles.header}>
-                <View style={styles.headerTitleRow}>
-                  <View style={styles.iconBadge}>
-                    <Droplet size={22} color="#0284C7" fill="#0284C7" />
-                  </View>
-                  <View>
-                    <Text style={styles.title}>Water Tracker</Text>
-                    <Text style={styles.subtitle}>Daily Hydration Goal</Text>
-                  </View>
+      {/*
+        WHY Pressable instead of TouchableWithoutFeedback:
+        TouchableWithoutFeedback injects an extra View that captures ALL touch
+        events — including swipe-scroll — and never forwards them to children.
+        This is the root cause of the scroll being stuck.
+        Pressable dispatches touches to children first, letting the ScrollView
+        receive and handle pan gestures properly.
+      */}
+      <Pressable style={styles.backdrop} onPress={onClose}>
+        {/* Inner Pressable stops backdrop-close when tapping inside the card */}
+        <Pressable style={styles.modalCard} onPress={() => {}}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          >
+            {/* ── Fixed Header ── */}
+            <View style={styles.header}>
+              <View style={styles.headerTitleRow}>
+                <View style={styles.iconBadge}>
+                  <Droplet size={22} color="#0284C7" fill="#0284C7" />
                 </View>
-                <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
-                  <X size={20} color="#64748B" />
-                </TouchableOpacity>
+                <View>
+                  <Text style={styles.title}>Water Tracker</Text>
+                  <Text style={styles.subtitle}>Daily Hydration Goal</Text>
+                </View>
               </View>
+              <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
+                <X size={20} color="#64748B" />
+              </TouchableOpacity>
+            </View>
 
-              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollBody}>
-                {/* Hero Intake Progress Card */}
-                <Surface style={styles.progressHero}>
-                  <View style={styles.heroRow}>
-                    <View style={styles.heroTextContainer}>
-                      <Text style={styles.intakeLargeText}>
-                        {currentIntake.toLocaleString()}{' '}
-                        <Text style={styles.unitText}>/ {targetWater.toLocaleString()} ml</Text>
-                      </Text>
-                      <Text style={styles.remainingText}>
-                        {progressPercent >= 100
-                          ? '🎉 Daily target reached!'
-                          : `${remainingMl.toLocaleString()} ml remaining`}
-                      </Text>
-                    </View>
-
-                    <TouchableOpacity
-                      style={styles.editGoalBtn}
-                      onPress={() => setShowGoalEdit(!showGoalEdit)}
-                    >
-                      <Target size={16} color="#0284C7" />
-                      <Text style={styles.editGoalText}>Goal</Text>
-                    </TouchableOpacity>
+            {/*
+              Single ScrollView for ALL content.
+              No nested ScrollViews — they compete for the same gesture
+              and cause the "stuck" symptom on both iOS and Android.
+              The outer modalCard's maxHeight keeps the sheet bounded;
+              this ScrollView fills and scrolls whatever overflows.
+            */}
+            <ScrollView
+              style={styles.scrollArea}
+              contentContainerStyle={styles.scrollBody}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              bounces={true}
+            >
+              {/* Hero Intake Progress Card */}
+              <Surface style={styles.progressHero}>
+                <View style={styles.heroRow}>
+                  <View style={styles.heroTextContainer}>
+                    <Text style={styles.intakeLargeText}>
+                      {currentIntake.toLocaleString()}{' '}
+                      <Text style={styles.unitText}>/ {targetWater.toLocaleString()} ml</Text>
+                    </Text>
+                    <Text style={styles.remainingText}>
+                      {progressPercent >= 100
+                        ? '🎉 Daily target reached!'
+                        : `${remainingMl.toLocaleString()} ml remaining`}
+                    </Text>
                   </View>
 
-                  {/* Dynamic Progress Bar */}
-                  <View style={styles.progressBarBg}>
-                    <View style={[styles.progressBarFill, { width: `${progressPercent}%` }]} />
-                  </View>
-
-                  <View style={styles.progressMetaRow}>
-                    <Text style={styles.metaPercentText}>{progressPercent}% Complete</Text>
-                    {progressPercent >= 100 && (
-                      <View style={styles.completedBadge}>
-                        <CheckCircle2 size={14} color="#16A34A" />
-                        <Text style={styles.completedText}>Hydrated</Text>
-                      </View>
-                    )}
-                  </View>
-                </Surface>
-
-                {/* Target Goal Inline Editor */}
-                {showGoalEdit && (
-                  <View style={styles.goalEditContainer}>
-                    <Text style={styles.sectionLabel}>Set Daily Target Goal:</Text>
-                    <View style={styles.goalChipRow}>
-                      {[2000, 2500, 3000, 3500].map((goalVal) => (
-                        <TouchableOpacity
-                          key={goalVal}
-                          style={[
-                            styles.goalChip,
-                            targetWater === goalVal && styles.goalChipActive,
-                          ]}
-                          onPress={() => handleSaveGoal(goalVal)}
-                        >
-                          <Text
-                            style={[
-                              styles.goalChipText,
-                              targetWater === goalVal && styles.goalChipTextActive,
-                            ]}
-                          >
-                            {goalVal / 1000}L
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-
-                    <View style={styles.customGoalRow}>
-                      <TextInput
-                        style={styles.customGoalInput}
-                        placeholder="Custom (ml)"
-                        keyboardType="number-pad"
-                        value={targetGoalInput}
-                        onChangeText={setTargetGoalInput}
-                        placeholderTextColor="#94A3B8"
-                      />
-                      <TouchableOpacity
-                        style={styles.saveGoalBtn}
-                        onPress={() => handleSaveGoal(parseInt(targetGoalInput, 10))}
-                      >
-                        <Text style={styles.saveGoalBtnText}>Save</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                )}
-
-                {/* Quick Add Presets Grid */}
-                <Text style={styles.sectionLabel}>Quick Add</Text>
-                <View style={styles.presetsGrid}>
-                  {PRESET_CONTAINERS.map((item) => (
-                    <TouchableOpacity
-                      key={item.id}
-                      style={styles.presetCard}
-                      onPress={() => handleAddPreset(item.amount)}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={styles.presetEmoji}>{item.emoji}</Text>
-                      <Text style={styles.presetLabel}>{item.label}</Text>
-                      <Text style={styles.presetAmount}>+{item.amount} ml</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-
-                {/* Custom Amount Logger */}
-                <Text style={styles.sectionLabel}>Custom Amount</Text>
-                <View style={styles.customInputRow}>
-                  <TextInput
-                    style={styles.customInput}
-                    placeholder="Enter amount in ml (e.g. 350)"
-                    keyboardType="number-pad"
-                    value={customAmount}
-                    onChangeText={setCustomAmount}
-                    placeholderTextColor="#94A3B8"
-                  />
                   <TouchableOpacity
-                    style={[styles.addCustomBtn, !customAmount && styles.addCustomBtnDisabled]}
-                    onPress={handleAddCustom}
-                    disabled={!customAmount}
+                    style={styles.editGoalBtn}
+                    onPress={() => setShowGoalEdit(!showGoalEdit)}
                   >
-                    <Plus size={18} color="#FFFFFF" />
-                    <Text style={styles.addCustomBtnText}>Add</Text>
+                    <Target size={16} color="#0284C7" />
+                    <Text style={styles.editGoalText}>Goal</Text>
                   </TouchableOpacity>
                 </View>
 
-                {/* Today's Water Logs History */}
-                <Text style={styles.sectionLabel}>Today's Water Logs</Text>
-                {todayLog?.waterLogs && todayLog.waterLogs.length > 0 ? (
-                  <View style={styles.logsList}>
-                    {todayLog.waterLogs.map((log) => (
-                      <View key={log._id} style={styles.logItem}>
-                        <View style={styles.logItemLeft}>
-                          <View style={styles.logItemDot} />
-                          <View>
-                            <Text style={styles.logItemAmount}>+{log.amountMl} ml</Text>
-                            <Text style={styles.logItemTime}>{formatTime(log.addedAt)}</Text>
-                          </View>
-                        </View>
-                        <TouchableOpacity
-                          style={styles.deleteLogBtn}
-                          onPress={() => handleDeleteEntry(log._id)}
+                <View style={styles.progressBarBg}>
+                  <View style={[styles.progressBarFill, { width: `${progressPercent}%` }]} />
+                </View>
+
+                <View style={styles.progressMetaRow}>
+                  <Text style={styles.metaPercentText}>{progressPercent}% Complete</Text>
+                  {progressPercent >= 100 && (
+                    <View style={styles.completedBadge}>
+                      <CheckCircle2 size={14} color="#16A34A" />
+                      <Text style={styles.completedText}>Hydrated</Text>
+                    </View>
+                  )}
+                </View>
+              </Surface>
+
+              {/* Target Goal Inline Editor */}
+              {showGoalEdit && (
+                <View style={styles.goalEditContainer}>
+                  <Text style={styles.sectionLabel}>Set Daily Target Goal:</Text>
+                  <View style={styles.goalChipRow}>
+                    {[2000, 2500, 3000, 3500].map((goalVal) => (
+                      <TouchableOpacity
+                        key={goalVal}
+                        style={[
+                          styles.goalChip,
+                          targetWater === goalVal && styles.goalChipActive,
+                        ]}
+                        onPress={() => handleSaveGoal(goalVal)}
+                      >
+                        <Text
+                          style={[
+                            styles.goalChipText,
+                            targetWater === goalVal && styles.goalChipTextActive,
+                          ]}
                         >
-                          <Trash2 size={16} color="#94A3B8" />
-                        </TouchableOpacity>
-                      </View>
+                          {goalVal / 1000}L
+                        </Text>
+                      </TouchableOpacity>
                     ))}
                   </View>
-                ) : (
-                  <View style={styles.emptyLogsContainer}>
-                    <Text style={styles.emptyLogsText}>No water logged for this date yet.</Text>
+
+                  <View style={styles.customGoalRow}>
+                    <TextInput
+                      style={styles.customGoalInput}
+                      placeholder="Custom (ml)"
+                      keyboardType="number-pad"
+                      value={targetGoalInput}
+                      onChangeText={setTargetGoalInput}
+                      placeholderTextColor="#94A3B8"
+                    />
+                    <TouchableOpacity
+                      style={styles.saveGoalBtn}
+                      onPress={() => handleSaveGoal(parseInt(targetGoalInput, 10))}
+                    >
+                      <Text style={styles.saveGoalBtnText}>Save</Text>
+                    </TouchableOpacity>
                   </View>
-                )}
-              </ScrollView>
-            </KeyboardAvoidingView>
-          </TouchableWithoutFeedback>
-        </View>
-      </TouchableWithoutFeedback>
+                </View>
+              )}
+
+              {/* Quick Add Presets */}
+              <Text style={styles.sectionLabel}>Quick Add</Text>
+              <View style={styles.presetsGrid}>
+                {PRESET_CONTAINERS.map((item) => (
+                  <TouchableOpacity
+                    key={item.id}
+                    style={styles.presetCard}
+                    onPress={() => handleAddPreset(item.amount)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.presetEmoji}>{item.emoji}</Text>
+                    <Text style={styles.presetLabel}>{item.label}</Text>
+                    <Text style={styles.presetAmount}>+{item.amount} ml</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {/* Custom Amount */}
+              <Text style={styles.sectionLabel}>Custom Amount</Text>
+              <View style={styles.customInputRow}>
+                <TextInput
+                  style={styles.customInput}
+                  placeholder="Enter amount in ml (e.g. 350)"
+                  keyboardType="number-pad"
+                  value={customAmount}
+                  onChangeText={setCustomAmount}
+                  placeholderTextColor="#94A3B8"
+                />
+                <TouchableOpacity
+                  style={[styles.addCustomBtn, !customAmount && styles.addCustomBtnDisabled]}
+                  onPress={handleAddCustom}
+                  disabled={!customAmount}
+                >
+                  <Plus size={18} color="#FFFFFF" />
+                  <Text style={styles.addCustomBtnText}>Add</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Today's Water Logs — plain View, outer ScrollView scrolls everything */}
+              <Text style={styles.sectionLabel}>Today's Water Logs</Text>
+              {todayLog?.waterLogs && todayLog.waterLogs.length > 0 ? (
+                <View style={styles.logsList}>
+                  {[...todayLog.waterLogs].reverse().map((log) => (
+                    <View key={log._id} style={styles.logItem}>
+                      <View style={styles.logItemLeft}>
+                        <View style={styles.logItemDot} />
+                        <View>
+                          <Text style={styles.logItemAmount}>+{log.amountMl} ml</Text>
+                          <Text style={styles.logItemTime}>{formatTime(log.addedAt)}</Text>
+                        </View>
+                      </View>
+                      <TouchableOpacity
+                        style={styles.deleteLogBtn}
+                        onPress={() => handleDeleteEntry(log._id)}
+                      >
+                        <Trash2 size={16} color="#94A3B8" />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </View>
+              ) : (
+                <View style={styles.emptyLogsContainer}>
+                  <Text style={styles.emptyLogsText}>No water logged for this date yet.</Text>
+                </View>
+              )}
+
+              {/* Bottom breathing room */}
+              <View style={{ height: 24 }} />
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </Pressable>
+      </Pressable>
     </Modal>
   );
 };
@@ -281,7 +302,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     maxHeight: '90%',
-    paddingBottom: Platform.OS === 'ios' ? 40 : 20,
+    paddingBottom: Platform.OS === 'ios' ? 34 : 20,
   },
   header: {
     flexDirection: 'row',
@@ -324,9 +345,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  // flexShrink: 1 lets the ScrollView shrink to fill only available space
+  // inside the maxHeight-bounded card — do NOT set flex: 1 here or the card
+  // will try to fill the whole screen.
+  scrollArea: {
+    flexShrink: 1,
+  },
   scrollBody: {
     padding: 20,
-    gap: 16,
+    gap: 14,
+    paddingBottom: 8,
   },
   progressHero: {
     backgroundColor: '#F0F9FF',

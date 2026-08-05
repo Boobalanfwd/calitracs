@@ -1,5 +1,16 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+// Storage keys for smart notification throttling & gap tracking
+const STORAGE_KEYS = {
+  LAST_WATER_LOG_TIME: 'calitracs_notif_last_water_log_time',
+  LAST_WATER_GAP_NOTIF_TIME: 'calitracs_notif_last_water_gap_notif_time',
+  LAST_WATER_GOAL_DATE: 'calitracs_notif_last_water_goal_date',
+  LAST_PROTEIN_NOTIF_DATE: 'calitracs_notif_last_protein_notif_date',
+  LAST_CALORIE_NOTIF_DATE: 'calitracs_notif_last_calorie_notif_date',
+  LAST_MACRO_NOTIF_DATE: 'calitracs_notif_last_macro_notif_date',
+};
 
 // Configure notification behavior for SDK 54 foreground delivery
 Notifications.setNotificationHandler({
@@ -16,7 +27,7 @@ export interface AppNotificationItem {
   title: string;
   body: string;
   timestamp: string;
-  type: 'calorie_exceeded' | 'low_protein' | 'high_carbs' | 'high_fat' | 'water_reminder' | 'test';
+  type: 'calorie_exceeded' | 'low_protein' | 'high_carbs' | 'high_fat' | 'water_reminder' | 'water_goal' | 'water_gap' | 'test';
   read: boolean;
 }
 
@@ -154,7 +165,9 @@ class NotificationService {
   }
 
   /**
-   * Evaluate user macro totals after logging a meal and send real-time alerts
+   * Evaluate user macro totals after logging a meal and send smart, non-spammy reminders.
+   * - Protein reminders are sent in a friendly, encouraging tone with specific food suggestions.
+   * - Throttled so notifications are sent at most ONCE per day (not on every food log).
    */
   async evaluateMacroAlerts(params: MacroAlertParams) {
     const {
@@ -168,68 +181,157 @@ class NotificationService {
       targetFatG,
     } = params;
 
-    // 1. Calorie Exceeded Alert
-    if (targetCalories > 0 && consumedCalories > targetCalories) {
-      const overCal = Math.round(consumedCalories - targetCalories);
-      await this.sendLocalNotification(
-        '🚨 Calorie Target Exceeded!',
-        `You have logged ${consumedCalories} kcal today (${overCal} kcal over your daily target of ${targetCalories} kcal).`,
-        { type: 'calorie_exceeded', overCal }
-      );
-    }
-
-    // 2. Low Protein Warning (after afternoon or evening)
+    const todayStr = new Date().toISOString().split('T')[0];
     const currentHour = new Date().getHours();
-    if (currentHour >= 16 && targetProteinG > 0) {
-      const proteinPct = (proteinG / targetProteinG) * 100;
-      if (proteinPct < 60) {
-        const remainingProtein = Math.round(targetProteinG - proteinG);
-        await this.sendLocalNotification(
-          '🥩 Low Protein Warning!',
-          `You've reached only ${Math.round(proteinG)}g / ${targetProteinG}g of your protein target. Add ${remainingProtein}g more protein tonight!`,
-          { type: 'low_protein', remainingProtein }
-        );
+
+    // 1. Calorie Goal / Limit Alert — Sent at most ONCE per day when crossing target
+    if (targetCalories > 0 && consumedCalories >= targetCalories) {
+      try {
+        const lastCalorieDate = await AsyncStorage.getItem(STORAGE_KEYS.LAST_CALORIE_NOTIF_DATE);
+        if (lastCalorieDate !== todayStr) {
+          const overCal = Math.round(consumedCalories - targetCalories);
+          if (overCal > 50) {
+            await this.sendLocalNotification(
+              '🎯 Calorie Goal Exceeded',
+              `You've logged ${Math.round(consumedCalories)} kcal today (${overCal} kcal over your daily target of ${targetCalories} kcal).`,
+              { type: 'calorie_exceeded', overCal }
+            );
+          } else {
+            await this.sendLocalNotification(
+              '🎉 Daily Calorie Goal Reached!',
+              `Great job! You reached your target of ${targetCalories} kcal for today.`,
+              { type: 'calorie_exceeded', overCal: 0 }
+            );
+          }
+          await AsyncStorage.setItem(STORAGE_KEYS.LAST_CALORIE_NOTIF_DATE, todayStr);
+        }
+      } catch (err) {
+        console.warn('[NotificationService] Calorie notif check error:', err);
       }
     }
 
-    // 3. High Carbs / Fat Notice
-    if (targetCarbsG > 0 && carbsG > targetCarbsG * 1.25) {
-      await this.sendLocalNotification(
-        '🌾 High Carbs Intake Notice',
-        `Carbs intake (${Math.round(carbsG)}g) is 25% above your target (${targetCarbsG}g). Balance your next meal with protein & fiber!`,
-        { type: 'high_carbs' }
-      );
-    } else if (targetFatG > 0 && fatG > targetFatG * 1.25) {
-      await this.sendLocalNotification(
-        '🥑 High Fat Intake Notice',
-        `Fat intake (${Math.round(fatG)}g) is above your daily target (${targetFatG}g). Keep an eye on heavy oils and fried foods.`,
-        { type: 'high_fat' }
-      );
+    // 2. Low Protein Reminder (Friendly tone + high-protein food suggestions)
+    // Evaluated in the evening (after 5 PM) when dinner planning occurs, and sent AT MOST ONCE per day.
+    if (currentHour >= 17 && targetProteinG > 0) {
+      try {
+        const proteinPct = (proteinG / targetProteinG) * 100;
+        const lastProteinDate = await AsyncStorage.getItem(STORAGE_KEYS.LAST_PROTEIN_NOTIF_DATE);
+
+        if (proteinPct < 65 && lastProteinDate !== todayStr) {
+          const remainingProtein = Math.round(targetProteinG - proteinG);
+          await this.sendLocalNotification(
+            '💡 Mind Your Protein Goal',
+            `Your protein is at ${Math.round(proteinG)}g / ${targetProteinG}g today. Adding chicken breast, eggs, paneer, tofu, fish, lentils, or a protein shake to dinner can help you hit your goal! 💪`,
+            { type: 'low_protein', remainingProtein }
+          );
+          await AsyncStorage.setItem(STORAGE_KEYS.LAST_PROTEIN_NOTIF_DATE, todayStr);
+        }
+      } catch (err) {
+        console.warn('[NotificationService] Protein notif check error:', err);
+      }
+    }
+
+    // 3. High Carbs / Fat Balance Notice — Sent at most ONCE per day
+    if ((targetCarbsG > 0 && carbsG > targetCarbsG * 1.35) || (targetFatG > 0 && fatG > targetFatG * 1.35)) {
+      try {
+        const lastMacroDate = await AsyncStorage.getItem(STORAGE_KEYS.LAST_MACRO_NOTIF_DATE);
+        if (lastMacroDate !== todayStr) {
+          const macroType = carbsG > targetCarbsG * 1.35 ? 'carbs' : 'fat';
+          await this.sendLocalNotification(
+            '🥗 Balanced Nutrition Tip',
+            `Your ${macroType} intake is a bit high today. Try pairing remaining meals with extra lean protein and fiber!`,
+            { type: macroType === 'carbs' ? 'high_carbs' : 'high_fat' }
+          );
+          await AsyncStorage.setItem(STORAGE_KEYS.LAST_MACRO_NOTIF_DATE, todayStr);
+        }
+      } catch (err) {
+        console.warn('[NotificationService] Macro balance notif error:', err);
+      }
     }
   }
 
   /**
-   * Evaluate water intake and notify if under hydration target
+   * Called whenever user logs water.
+   * - Records timestamp so we know user just drank water.
+   * - Does NOT send a "Drink water now" alert immediately when logging water!
+   * - Triggers goal celebration when daily water goal is achieved (once per day).
    */
-  async evaluateWaterAlert(loggedWaterMl: number, targetWaterMl: number = 2500) {
-    if (targetWaterMl <= 0) return;
+  async recordWaterLogged(loggedWaterMl: number, targetWaterMl: number = 2000) {
+    const now = Date.now();
+    const todayStr = new Date().toISOString().split('T')[0];
 
-    const remainingMl = targetWaterMl - loggedWaterMl;
+    try {
+      // 1. Update last water log timestamp
+      await AsyncStorage.setItem(STORAGE_KEYS.LAST_WATER_LOG_TIME, now.toString());
+
+      // 2. Goal reached celebration notification (once per day)
+      if (targetWaterMl > 0 && loggedWaterMl >= targetWaterMl) {
+        const lastGoalDate = await AsyncStorage.getItem(STORAGE_KEYS.LAST_WATER_GOAL_DATE);
+        if (lastGoalDate !== todayStr) {
+          await this.sendLocalNotification(
+            '🎉 Hydration Goal Achieved!',
+            `Awesome effort! You reached your daily hydration goal of ${targetWaterMl.toLocaleString()} ml today. Keep staying hydrated! 💧`,
+            { type: 'water_reminder', loggedWaterMl }
+          );
+          await AsyncStorage.setItem(STORAGE_KEYS.LAST_WATER_GOAL_DATE, todayStr);
+        }
+      }
+    } catch (err) {
+      console.warn('[NotificationService] recordWaterLogged error:', err);
+    }
+  }
+
+  /**
+   * Legacy alias for recordWaterLogged
+   */
+  async evaluateWaterAlert(loggedWaterMl: number, targetWaterMl: number = 2000) {
+    await this.recordWaterLogged(loggedWaterMl, targetWaterMl);
+  }
+
+  /**
+   * Check for a long gap since the user last drank water (e.g. >3 hours during daytime).
+   * Reminds the user only when they haven't logged water for a significant period.
+   */
+  async checkWaterGapReminder(loggedWaterMl: number, targetWaterMl: number = 2000) {
+    if (targetWaterMl > 0 && loggedWaterMl >= targetWaterMl) return; // Goal already hit today
+
+    const now = Date.now();
     const currentHour = new Date().getHours();
 
-    // Trigger hydration reminder if after 2 PM and less than 50% target reached
-    if (currentHour >= 14 && loggedWaterMl < targetWaterMl * 0.5) {
-      await this.sendLocalNotification(
-        '💧 Stay Hydrated!',
-        `You've drunk ${loggedWaterMl} ml today out of your ${targetWaterMl} ml goal. Drink a glass of water now!`,
-        { type: 'water_reminder', remainingMl }
-      );
-    } else if (currentHour >= 19 && remainingMl > 500) {
-      await this.sendLocalNotification(
-        '💧 Evening Water Goal Check',
-        `You are ${remainingMl} ml away from your daily water goal. Keep a water bottle nearby!`,
-        { type: 'water_reminder_evening', remainingMl }
-      );
+    // Only remind during daytime hours (9 AM - 9 PM)
+    if (currentHour < 9 || currentHour >= 21) return;
+
+    try {
+      const rawLastLogTime = await AsyncStorage.getItem(STORAGE_KEYS.LAST_WATER_LOG_TIME);
+      const lastLogTime = rawLastLogTime ? parseInt(rawLastLogTime, 10) : 0;
+
+      // If no log recorded yet today, set baseline
+      if (lastLogTime === 0) {
+        await AsyncStorage.setItem(STORAGE_KEYS.LAST_WATER_LOG_TIME, now.toString());
+        return;
+      }
+
+      const hoursSinceLastLog = (now - lastLogTime) / (1000 * 60 * 60);
+
+      // Check if 3+ hours have passed since last water log
+      if (hoursSinceLastLog >= 3.0) {
+        const rawLastGapNotifTime = await AsyncStorage.getItem(STORAGE_KEYS.LAST_WATER_GAP_NOTIF_TIME);
+        const lastGapNotifTime = rawLastGapNotifTime ? parseInt(rawLastGapNotifTime, 10) : 0;
+        const hoursSinceLastNotif = (now - lastGapNotifTime) / (1000 * 60 * 60);
+
+        // Send gap reminder at most once every 3 hours
+        if (hoursSinceLastNotif >= 3.0) {
+          const remainingMl = Math.max(0, targetWaterMl - loggedWaterMl);
+          await this.sendLocalNotification(
+            '💧 Time for a Water Break!',
+            `It's been over ${Math.floor(hoursSinceLastLog)} hours since your last water log. Take a quick sip to stay on track (${remainingMl} ml remaining)! 🥤`,
+            { type: 'water_reminder', hoursSinceLastLog }
+          );
+          await AsyncStorage.setItem(STORAGE_KEYS.LAST_WATER_GAP_NOTIF_TIME, now.toString());
+        }
+      }
+    } catch (err) {
+      console.warn('[NotificationService] checkWaterGapReminder error:', err);
     }
   }
 

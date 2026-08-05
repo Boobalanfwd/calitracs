@@ -6,12 +6,13 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Surface, Button, Portal, Dialog, TextInput as PaperInput } from 'react-native-paper';
 import { useFocusEffect } from '@react-navigation/native';
-import { HelpCircle, Pencil, RotateCcw } from 'lucide-react-native';
+import { HelpCircle, Pencil, RotateCcw, Droplet } from 'lucide-react-native';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLog } from '../../contexts/LogContext';
 import { API } from '../../services/api';
 import { FONTS } from '../../theme/fonts';
+import { ScreenLoader, SkeletonTransition } from '../../components/ui';
 
 const { width } = Dimensions.get('window');
 
@@ -118,6 +119,11 @@ const ProgressScreen: React.FC = () => {
   const [totalWeeklyKcal, setTotalWeeklyKcal] = useState(0);
   const [loading, setLoading] = useState(false);
 
+  // Water chart state
+  const [waterData, setWaterData] = useState<Array<{ date: string; waterMl: number; day: string; isToday: boolean }>>([]);
+  const [waterTarget, setWaterTarget] = useState(2000);
+  const [avgWaterMl, setAvgWaterMl] = useState(0);
+
   useEffect(() => {
     setNewWeightInput(currentWeight.toString());
     setNewHeightInput(currentHeight.toString());
@@ -192,6 +198,26 @@ const ProgressScreen: React.FC = () => {
       // 100% Real Database Data (No mock fallback)
       setWeeklyData(mapped);
       setTotalWeeklyKcal(sum);
+
+      // ── Fetch weekly water data (same week range) ──────────────────────────
+      const weekDaysForWater = getWeekDays(offset);
+      const startDateStr = weekDaysForWater[0].dateStr;
+      try {
+        const waterRes = await API.getWeeklyWater(token, startDateStr);
+        const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+        const todayStr = new Date().toISOString().split('T')[0];
+        const mapped = waterRes.days.map((d, i) => ({
+          date: d.date,
+          waterMl: d.waterMl,
+          day: DAY_NAMES[i] ?? '',
+          isToday: d.date === todayStr,
+        }));
+        setWaterData(mapped);
+        setWaterTarget(waterRes.targetWaterMl);
+        setAvgWaterMl(waterRes.avgWaterMl);
+      } catch (wErr) {
+        console.warn('[ProgressScreen] Weekly water fetch failed:', wErr);
+      }
     } catch (err) {
       console.warn('[ProgressScreen] Failed to load weekly database progress:', err);
     } finally {
@@ -236,7 +262,13 @@ const ProgressScreen: React.FC = () => {
     }
   };
 
+  const isInitialLoad = loading && weeklyData.length === 0;
+
   return (
+    <SkeletonTransition
+      isLoading={isInitialLoad}
+      skeleton={<ScreenLoader variant="progress" />}
+    >
     <SafeAreaView style={[styles.container, { backgroundColor: '#F8FAFC' }]} edges={['top']}>
       <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
 
@@ -479,6 +511,93 @@ const ProgressScreen: React.FC = () => {
           </View>
         </Surface>
 
+        {/* ── SECTION 3: WEEKLY WATER INTAKE CHART ── */}
+        {waterData.length > 0 && (() => {
+          const maxWater = Math.max(waterTarget, ...waterData.map(d => d.waterMl), 500);
+          return (
+            <Surface style={styles.cardContainer} elevation={1}>
+              {/* Header */}
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: '#E0F2FE', alignItems: 'center', justifyContent: 'center' }}>
+                    <Droplet size={16} color="#0284C7" fill="#0284C7" />
+                  </View>
+                  <View>
+                    <Text style={[styles.sectionTitle, { color: '#0F172A', fontSize: 15, marginBottom: 0 }]}>Weekly Hydration</Text>
+                    <Text style={{ fontSize: 11, color: '#64748B', fontFamily: FONTS.body.regular }}>
+                      Avg {avgWaterMl.toLocaleString()} ml/day · Target {(waterTarget / 1000).toFixed(1)}L
+                    </Text>
+                  </View>
+                </View>
+                {/* Summary badge */}
+                <View style={{ backgroundColor: avgWaterMl >= waterTarget ? '#DCFCE7' : '#EFF6FF', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 5 }}>
+                  <Text style={{ fontSize: 12, fontFamily: FONTS.heading.bold, color: avgWaterMl >= waterTarget ? '#16A34A' : '#0284C7' }}>
+                    {avgWaterMl >= waterTarget ? '💧 On Track' : `${Math.round((avgWaterMl / waterTarget) * 100)}%`}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Bar Chart */}
+              <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 6, height: 120 }}>
+                {waterData.map((d, i) => {
+                  const barHeightPct = maxWater > 0 ? d.waterMl / maxWater : 0;
+                  const barH = Math.max(4, Math.round(barHeightPct * 110));
+                  const reachedTarget = d.waterMl >= waterTarget;
+                  const barColor = reachedTarget ? '#0284C7' : '#BAE6FD';
+                  return (
+                    <View key={i} style={{ flex: 1, alignItems: 'center', justifyContent: 'flex-end', height: 120 }}>
+                      {/* Value label on top */}
+                      {d.waterMl > 0 && (
+                        <Text style={{ fontSize: 8, color: '#64748B', fontFamily: FONTS.body.bold, marginBottom: 2 }}>
+                          {d.waterMl >= 1000 ? `${(d.waterMl / 1000).toFixed(1)}L` : `${d.waterMl}`}
+                        </Text>
+                      )}
+                      <View
+                        style={[
+                          {
+                            width: '80%',
+                            height: barH,
+                            backgroundColor: barColor,
+                            borderRadius: 6,
+                            borderWidth: d.isToday ? 2 : 0,
+                            borderColor: '#0284C7',
+                          },
+                        ]}
+                      />
+                    </View>
+                  );
+                })}
+              </View>
+
+              {/* Day labels */}
+              <View style={{ flexDirection: 'row', gap: 6, marginTop: 6 }}>
+                {waterData.map((d, i) => (
+                  <Text
+                    key={i}
+                    style={[
+                      { flex: 1, textAlign: 'center', fontSize: 10, fontFamily: FONTS.heading.medium, color: d.isToday ? '#0284C7' : '#94A3B8' },
+                    ]}
+                  >
+                    {d.day}
+                  </Text>
+                ))}
+              </View>
+
+              {/* Legend */}
+              <View style={{ flexDirection: 'row', gap: 14, marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#F1F5F9' }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                  <View style={{ width: 10, height: 10, borderRadius: 3, backgroundColor: '#0284C7' }} />
+                  <Text style={{ fontSize: 11, color: '#64748B', fontFamily: FONTS.body.regular }}>Target reached</Text>
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                  <View style={{ width: 10, height: 10, borderRadius: 3, backgroundColor: '#BAE6FD' }} />
+                  <Text style={{ fontSize: 11, color: '#64748B', fontFamily: FONTS.body.regular }}>Below target</Text>
+                </View>
+              </View>
+            </Surface>
+          );
+        })()}
+
         {/* Height & Weight Quick Edit Button */}
         <Surface style={styles.editProfileCard} elevation={1}>
           <TouchableOpacity onPress={() => setWeightModalOpen(true)} activeOpacity={0.8}>
@@ -540,6 +659,7 @@ const ProgressScreen: React.FC = () => {
         </Dialog>
       </Portal>
     </SafeAreaView>
+    </SkeletonTransition>
   );
 };
 

@@ -77,13 +77,19 @@ export const LogProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       const data = await API.getLog(token, targetDate);
       setTodayLog(data.log);
+
+      // Check for long gap in water intake if viewing today's log
+      const todayStr = new Date().toISOString().split('T')[0];
+      if (data.log && targetDate === todayStr) {
+        notificationService.checkWaterGapReminder(data.log.waterIntakeMl || 0, targets?.waterMl || 2000);
+      }
     } catch (err) {
       console.warn('[LogContext] Failed to load log for date', targetDate, err);
       setTodayLog({ ...emptyLog, date: targetDate });
     } finally {
       setIsLoadingLog(false);
     }
-  }, [token, selectedDateStr]);
+  }, [token, selectedDateStr, targets]);
 
   const addEntry = useCallback(async (params: AddEntryParams) => {
     if (!token) return;
@@ -133,13 +139,13 @@ export const LogProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setTodayLog(data.log);
 
       if (data.log) {
-        notificationService.evaluateWaterAlert(data.log.waterIntakeMl || 0, 2500);
+        notificationService.recordWaterLogged(data.log.waterIntakeMl || 0, targets?.waterMl || 2000);
       }
     } catch (err) {
       console.warn('[LogContext] Failed to update water intake', err);
       loadTodayLog(targetDate); // Rollback on error
     }
-  }, [token, selectedDateStr, loadTodayLog]);
+  }, [token, selectedDateStr, loadTodayLog, targets]);
 
   const deleteWaterEntry = useCallback(async (waterId: string, date?: string) => {
     if (!token) return;

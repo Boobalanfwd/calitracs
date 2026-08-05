@@ -19,6 +19,7 @@ import { WaterIntakeModal } from '../../components/WaterIntakeModal';
 import { AddFoodModal } from '../../components/AddFoodModal';
 import { NotificationCenterModal } from '../../components/NotificationCenterModal';
 import { notificationService } from '../../services/notificationService';
+import { ScreenLoader, SkeletonTransition } from '../../components/ui';
 
 interface Props { navigation: NativeStackNavigationProp<any> }
 
@@ -207,7 +208,13 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
     updateWaterIntake(250, 'add', formatDateKey(selectedDate));
   };
 
+  const isInitialLoad = isLoadingLog && !todayLog;
+
   return (
+    <SkeletonTransition
+      isLoading={isInitialLoad}
+      skeleton={<ScreenLoader variant="dashboard" />}
+    >
     <SafeAreaView style={[styles.container, { backgroundColor: '#F8FAFC' }]} edges={['top']}>
       <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
 
@@ -634,6 +641,7 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
         onClose={() => setShowNotificationModal(false)}
       />
     </SafeAreaView>
+    </SkeletonTransition>
   );
 };
 

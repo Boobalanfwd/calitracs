@@ -33,7 +33,7 @@ export const NotificationCenterModal: React.FC<Props> = ({ visible, onClose }) =
       );
     }
     if (activeTab === 'water') {
-      return notifications.filter((n) => n.type === 'water_reminder');
+      return notifications.filter((n) => ['water_reminder', 'water_goal', 'water_gap'].includes(n.type));
     }
     if (activeTab === 'unread') {
       return notifications.filter((n) => !n.read);

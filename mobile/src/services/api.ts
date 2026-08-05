@@ -294,6 +294,26 @@ export const API = {
     return data;
   },
 
+  getWeeklyWater: async (
+    token: string,
+    startDate?: string
+  ): Promise<{
+    days: Array<{ date: string; waterMl: number }>;
+    targetWaterMl: number;
+    totalWaterMl: number;
+    avgWaterMl: number;
+  }> => {
+    const url = startDate
+      ? `${API_BASE_URL}/api/logs/water/weekly?startDate=${startDate}`
+      : `${API_BASE_URL}/api/logs/water/weekly`;
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) throw new Error(data.error || 'Failed to fetch weekly water data');
+    return data;
+  },
+
   getCalendarMonth: async (token: string, year: number, month: number): Promise<{ days: CalendarDay[]; targetCalories: number }> => {
     const res = await fetch(`${API_BASE_URL}/api/logs/calendar/${year}/${month}`, {
       headers: { Authorization: `Bearer ${token}` },

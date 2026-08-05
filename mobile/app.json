@@ -6,8 +6,8 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "statusBar": {
-      "style": "dark",
+    "androidStatusBar": {
+      "barStyle": "dark-content",
       "backgroundColor": "#FFFFFF"
     },
     "androidNavigationBar": {

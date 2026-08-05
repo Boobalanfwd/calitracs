@@ -21,6 +21,7 @@ import { API } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { FONTS } from '../../theme/fonts';
+import { ScreenLoader, SkeletonTransition } from '../../components/ui';
 
 interface Props { navigation: NativeStackNavigationProp<any> }
 
@@ -182,7 +183,13 @@ const CalendarScreen: React.FC<Props> = ({ navigation }) => {
 
   const calProgress = Math.min(1, targetCalories > 0 ? consumedCalories / targetCalories : 0);
 
+  const isInitialLoad = loading && days.length === 0;
+
   return (
+    <SkeletonTransition
+      isLoading={isInitialLoad}
+      skeleton={<ScreenLoader variant="calendar" />}
+    >
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]} edges={['top']}>
       <StatusBar barStyle="dark-content" backgroundColor={theme.background} />
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
@@ -441,6 +448,7 @@ const CalendarScreen: React.FC<Props> = ({ navigation }) => {
         <View style={{ height: 110 }} />
       </ScrollView>
     </SafeAreaView>
+    </SkeletonTransition>
   );
 };
 

@@ -263,3 +263,65 @@ export const deleteWaterEntry = async (req: Request, res: Response): Promise<voi
     res.status(500).json({ success: false, error: 'Failed to delete water entry.' });
   }
 };
+// ── Weekly Water Intake ───────────────────────────────────────────────────────
+// GET /api/logs/water/weekly?startDate=YYYY-MM-DD
+// Returns 7 days of water intake starting from startDate (Mon-Sun)
+export const getWeeklyWater = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { startDate } = req.query;
+
+    // Build 7-day range
+    let start: Date;
+    if (startDate && typeof startDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
+      start = new Date(startDate);
+    } else {
+      // Default: current Monday
+      const now = new Date();
+      const dow = now.getDay(); // 0 = Sun
+      const distToMon = dow === 0 ? -6 : 1 - dow;
+      start = new Date(now);
+      start.setDate(now.getDate() + distToMon);
+    }
+
+    const days: { date: string; waterMl: number }[] = [];
+    const dateStrings: string[] = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      const dateStr = d.toISOString().split('T')[0];
+      dateStrings.push(dateStr);
+      days.push({ date: dateStr, waterMl: 0 }); // default 0
+    }
+
+    const [logs, target] = await Promise.all([
+      FoodLog.find({
+        userId: req.user!.userId,
+        date: { $in: dateStrings },
+      }).select('date waterIntakeMl'),
+      DailyTarget.findOne({ userId: req.user!.userId }),
+    ]);
+
+    // Merge DB values into the 7-day array
+    const logMap = new Map(logs.map((l) => [l.date, l.waterIntakeMl]));
+    for (const day of days) {
+      if (logMap.has(day.date)) {
+        day.waterMl = logMap.get(day.date)!;
+      }
+    }
+
+    const targetWaterMl = target?.waterMl ?? 2000;
+    const totalWaterMl = days.reduce((sum, d) => sum + d.waterMl, 0);
+    const avgWaterMl = Math.round(totalWaterMl / 7);
+
+    res.json({
+      success: true,
+      days,
+      targetWaterMl,
+      totalWaterMl,
+      avgWaterMl,
+    });
+  } catch (err) {
+    console.error('[LogsController] Weekly water error:', err);
+    res.status(500).json({ success: false, error: 'Failed to fetch weekly water data.' });
+  }
+};
