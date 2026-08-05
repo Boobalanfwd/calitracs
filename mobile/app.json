@@ -1,0 +1,79 @@
+{
+  "expo": {
+    "name": "Calitracs",
+    "slug": "calitracs",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "statusBar": {
+      "style": "dark",
+      "backgroundColor": "#FFFFFF"
+    },
+    "androidNavigationBar": {
+      "barStyle": "dark-content",
+      "backgroundColor": "#FFFFFF"
+    },
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FFFFFF"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.calitracs.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Calitracs needs camera access to take food photos for AI analysis.",
+        "NSPhotoLibraryUsageDescription": "Calitracs needs photo library access to select food images for analysis.",
+        "NSPhotoLibraryAddUsageDescription": "Calitracs needs access to save photos."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#FFFFFF"
+      },
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.RECORD_AUDIO"
+      ],
+      "package": "com.calitracs.app"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "notification": {
+      "icon": "./assets/icon.png",
+      "color": "#FF6B00"
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Calitracs needs camera access to take food photos."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Calitracs needs access to your photos to analyze food images."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#FF6B00"
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "55cd4ea8-fdd2-4b0f-a5df-c59579b00062"
+      }
+    },
+    "owner": "boobalan12"
+  }
+}
