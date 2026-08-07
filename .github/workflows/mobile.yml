@@ -48,6 +48,8 @@ jobs:
     needs: ci
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
     defaults:
       run:
         working-directory: mobile
@@ -65,7 +67,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Warn if EXPO_TOKEN is not set
+        if: ${{ env.EXPO_TOKEN == '' }}
+        run: |
+          echo "::warning::EXPO_TOKEN secret is not set — skipping EAS build."
+          echo "Add it at: Settings > Secrets > Actions > New repository secret"
+
       - name: EAS Build (all platforms)
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        if: ${{ env.EXPO_TOKEN != '' }}
         run: npx --yes eas-cli build --platform all --profile production --non-interactive
