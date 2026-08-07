@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { withRetry, backoffDelay, sleep } from './retry';describe('backoffDelay', () => {
+import { withRetry, backoffDelay, sleep } from '../src/utils/retry';describe('backoffDelay', () => {
   beforeEach(() => {
     vi.spyOn(Math, 'random').mockReturnValue(0);
   });

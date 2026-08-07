@@ -1,13 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../models/DeviceToken', () => ({ DeviceToken: { find: vi.fn(), findByIdAndUpdate: vi.fn(), findOneAndUpdate: vi.fn() } }));
-vi.mock('../models/NotificationPreference', () => ({ NotificationPreference: { findOne: vi.fn() } }));
-vi.mock('../models/NotificationQueue', () => ({ NotificationQueue: { find: vi.fn(), findOneAndUpdate: vi.fn(), findByIdAndUpdate: vi.fn(), updateMany: vi.fn(), create: vi.fn(), insertMany: vi.fn(), countDocuments: vi.fn(), deleteMany: vi.fn() } }));
-vi.mock('../models/NotificationLog', () => ({ NotificationLog: { create: vi.fn(), findByIdAndUpdate: vi.fn(), findById: vi.fn(), find: vi.fn() } }));
-vi.mock('./expoPushService', () => ({ sendBatch: vi.fn(), pollReceipts: vi.fn(), ExpoPushMessage: {} }));
+vi.mock('../src/models/DeviceToken', () => ({ DeviceToken: { find: vi.fn(), findByIdAndUpdate: vi.fn(), findOneAndUpdate: vi.fn() } }));
+vi.mock('../src/models/NotificationPreference', () => ({ NotificationPreference: { findOne: vi.fn() } }));
+vi.mock('../src/models/NotificationQueue', () => ({ NotificationQueue: { find: vi.fn(), findOneAndUpdate: vi.fn(), findByIdAndUpdate: vi.fn(), updateMany: vi.fn(), create: vi.fn(), insertMany: vi.fn(), countDocuments: vi.fn(), deleteMany: vi.fn() } }));
+vi.mock('../src/models/NotificationLog', () => ({ NotificationLog: { create: vi.fn(), findByIdAndUpdate: vi.fn(), findById: vi.fn(), find: vi.fn() } }));
+vi.mock('../src/services/expoPushService', () => ({ sendBatch: vi.fn(), pollReceipts: vi.fn(), ExpoPushMessage: {} }));
 
-import { NotificationQueue } from '../models/NotificationQueue';
-import { getHourInTimezone, isQuietHours, nextHourInTimezone, reclaimStaleProcessingJobs, enqueueNotification, enqueueNotifications, getWorkerStats, resetWorkerStats } from './notificationWorker';
+import { NotificationQueue } from '../src/models/NotificationQueue';
+import { getHourInTimezone, isQuietHours, nextHourInTimezone, reclaimStaleProcessingJobs, enqueueNotification, enqueueNotifications, getWorkerStats, resetWorkerStats } from '../src/services/notificationWorker';
 
 const mockedQueue = vi.mocked(NotificationQueue);
 

@@ -1,4 +1,4 @@
-import { captureClientError } from './logger';
+import { captureClientError } from '../src/utils/logger';
 
 const fetchMock = jest.fn();
 const originalError = console.error;

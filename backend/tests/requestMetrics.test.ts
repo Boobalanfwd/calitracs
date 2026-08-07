@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { requestMetrics, getMetrics, resetRequestMetrics } from './requestMetrics';
+import { requestMetrics, getMetrics, resetRequestMetrics } from '../src/middlewares/requestMetrics';
 
 function makeRes(statusCode = 200) {
   const listeners: Record<string, (() => void) | undefined> = {};

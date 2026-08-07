@@ -1,5 +1,5 @@
-import { API, setAuthToken } from './api';
-import { API_BASE_URL } from '../config';
+import { API, setAuthToken } from '../src/services/api';
+import { API_BASE_URL } from '../src/config';
 
 const mockFetch = jest.fn();
 global.fetch = mockFetch as unknown as typeof fetch;

@@ -1,13 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import jwt from 'jsonwebtoken';
-import { AuthPayload, JWT_SECRET, signToken, authMiddleware, clearTokenVersionCache, invalidateTokenVersionCache } from './auth';
+import { AuthPayload, JWT_SECRET, signToken, authMiddleware, clearTokenVersionCache, invalidateTokenVersionCache } from '../src/middlewares/auth';
 
-vi.mock('../models/User', () => {
+vi.mock('../src/models/User', () => {
   const findById = vi.fn();
   return { User: { findById } };
 });
 
-import { User } from '../models/User';
+import { User } from '../src/models/User';
 
 const mockedFindById = vi.mocked(User.findById);
 

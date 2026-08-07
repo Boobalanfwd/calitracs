@@ -1,4 +1,4 @@
-import { formatDateKey, todayDateKey } from './dates';
+import { formatDateKey, todayDateKey } from '../src/utils/dates';
 
 describe('formatDateKey', () => {
   it('formats a date as YYYY-MM-DD using LOCAL components', () => {

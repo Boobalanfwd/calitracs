@@ -1,4 +1,4 @@
-import { getResizedCloudinaryUrl } from './imageUtils';
+import { getResizedCloudinaryUrl } from '../src/utils/imageUtils';
 
 describe('getResizedCloudinaryUrl', () => {
   it('injects width, q_auto and c_limit after the image/upload segment', () => {

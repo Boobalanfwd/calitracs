@@ -1,4 +1,4 @@
-import { saveToken, getToken, removeToken, saveUser, getUser, removeUser, clearAuth } from './authStorage';
+import { saveToken, getToken, removeToken, saveUser, getUser, removeUser, clearAuth } from '../src/services/authStorage';
 
 jest.mock('expo-secure-store', () => ({
   setItemAsync: jest.fn(),

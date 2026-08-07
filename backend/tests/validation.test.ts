@@ -8,7 +8,7 @@ import {
   isValidTimezone,
   ENTRY_LIMITS,
   WATER_LIMITS,
-} from './validation';
+} from '../src/utils/validation';
 
 describe('isValidDateKey', () => {
   it('accepts real dates', () => {

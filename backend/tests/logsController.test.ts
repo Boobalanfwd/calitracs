@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Request, Response } from 'express';
 import mongoose from 'mongoose';
 
-vi.mock('../models/FoodLog', () => {
+vi.mock('../src/models/FoodLog', () => {
   const FoodLog: any = vi.fn();
   FoodLog.findOne = vi.fn();
   FoodLog.find = vi.fn();
@@ -14,19 +14,19 @@ vi.mock('../models/FoodLog', () => {
   return { FoodLog, MealType: 'meal' };
 });
 
-vi.mock('../models/DailyTarget', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../models/DailyTarget')>();
+vi.mock('../src/models/DailyTarget', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/models/DailyTarget')>();
   return { ...actual, DailyTarget: { findOne: vi.fn(), find: vi.fn(), create: vi.fn() } };
 });
 
-vi.mock('../services/notificationOrchestrator', () => ({
+vi.mock('../src/services/notificationOrchestrator', () => ({
   onCaloriesGoalHit: vi.fn(),
 }));
 
-import { FoodLog } from '../models/FoodLog';
-import { DailyTarget } from '../models/DailyTarget';
-import { onCaloriesGoalHit } from '../services/notificationOrchestrator';
-import { getLog, addEntry, deleteEntry, getCalendarMonth, updateWaterIntake, getWeeklyWater, deleteWaterEntry } from './logsController';
+import { FoodLog } from '../src/models/FoodLog';
+import { DailyTarget } from '../src/models/DailyTarget';
+import { onCaloriesGoalHit } from '../src/services/notificationOrchestrator';
+import { getLog, addEntry, deleteEntry, getCalendarMonth, updateWaterIntake, getWeeklyWater, deleteWaterEntry } from '../src/controllers/logsController';
 
 const mockedFoodLog = vi.mocked(FoodLog);
 const mockedTarget = vi.mocked(DailyTarget);

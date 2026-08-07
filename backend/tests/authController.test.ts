@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Request, Response } from 'express';
 
-vi.mock('../models/User', () => ({
+vi.mock('../src/models/User', () => ({
   User: {
     findOne: vi.fn(),
     findById: vi.fn(),
@@ -10,8 +10,8 @@ vi.mock('../models/User', () => ({
   },
 }));
 
-vi.mock('../models/DailyTarget', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../models/DailyTarget')>();
+vi.mock('../src/models/DailyTarget', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/models/DailyTarget')>();
   return {
     ...actual,
     DailyTarget: {
@@ -26,16 +26,16 @@ vi.mock('bcryptjs', () => ({
   default: { hash: vi.fn(), compare: vi.fn() },
 }));
 
-vi.mock('../middlewares/auth', () => ({
+vi.mock('../src/middlewares/auth', () => ({
   signToken: vi.fn(),
   invalidateTokenVersionCache: vi.fn(),
 }));
 
-import { User } from '../models/User';
-import { DailyTarget } from '../models/DailyTarget';
+import { User } from '../src/models/User';
+import { DailyTarget } from '../src/models/DailyTarget';
 import bcrypt from 'bcryptjs';
-import { signToken } from '../middlewares/auth';
-import { register, login, getMe, updateProfile, convertGuest, guestLogin } from './authController';
+import { signToken } from '../src/middlewares/auth';
+import { register, login, getMe, updateProfile, convertGuest, guestLogin } from '../src/controllers/authController';
 
 const mockedUser = vi.mocked(User, true);
 const mockedTarget = vi.mocked(DailyTarget, true);

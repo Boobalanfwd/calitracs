@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { calculateSuggestedTargets } from './DailyTarget';
+import { calculateSuggestedTargets } from '../src/models/DailyTarget';
 
 describe('calculateSuggestedTargets', () => {
   const male = calculateSuggestedTargets(30, 70, 170, 'male', 'moderate', 'maintain');

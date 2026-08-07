@@ -6,7 +6,7 @@ import {
   resetErrorTracking,
   error,
   info,
-} from './logger';
+} from '../src/utils/logger';
 
 describe('captureError', () => {
   beforeEach(() => resetErrorTracking());

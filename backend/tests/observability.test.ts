@@ -4,9 +4,9 @@ import {
   metricsHandler,
   errorsHandler,
   clientErrorHandler,
-} from './observability';
-import { resetErrorTracking, getRecentErrors } from '../utils/logger';
-import { resetRequestMetrics } from '../middlewares/requestMetrics';
+} from '../src/routes/observability';
+import { resetErrorTracking, getRecentErrors } from '../src/utils/logger';
+import { resetRequestMetrics } from '../src/middlewares/requestMetrics';
 
 function makeRes() {
   let statusCode = 200;

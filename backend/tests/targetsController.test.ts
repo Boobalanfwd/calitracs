@@ -1,18 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Request, Response } from 'express';
 
-vi.mock('../models/DailyTarget', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../models/DailyTarget')>();
+vi.mock('../src/models/DailyTarget', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/models/DailyTarget')>();
   return { ...actual, DailyTarget: { findOne: vi.fn(), findOneAndUpdate: vi.fn(), create: vi.fn() } };
 });
 
-vi.mock('../models/User', () => ({
+vi.mock('../src/models/User', () => ({
   User: { findById: vi.fn() },
 }));
 
-import { DailyTarget } from '../models/DailyTarget';
-import { User } from '../models/User';
-import { getTargets, updateTargets, getSuggestedTargets } from './targetsController';
+import { DailyTarget } from '../src/models/DailyTarget';
+import { User } from '../src/models/User';
+import { getTargets, updateTargets, getSuggestedTargets } from '../src/controllers/targetsController';
 
 const mockedTarget = vi.mocked(DailyTarget);
 const mockedUser = vi.mocked(User);
