@@ -30,8 +30,8 @@ const NotificationQueueSchema = new Schema<INotificationQueue>(
       enum: ['meal_reminder', 'water_reminder', 'daily_checkin', 'calorie_goal', 'streak', 'weekly_summary', 'inactivity'],
       required: true,
     },
-    title: { type: String, required: true },
-    body: { type: String, required: true },
+    title: { type: String, required: true, maxlength: 300 },
+    body: { type: String, required: true, maxlength: 2000 },
     data: { type: Schema.Types.Mixed, default: {} },
     status: {
       type: String,
@@ -54,5 +54,8 @@ const NotificationQueueSchema = new Schema<INotificationQueue>(
 );
 
 NotificationQueueSchema.index({ status: 1, nextAttemptAt: 1 });
+// Job pick is sorted by createdAt, and the 7-day purge deletes terminal jobs by
+// status+createdAt — one compound index serves both.
+NotificationQueueSchema.index({ status: 1, createdAt: 1 });
 
 export const NotificationQueue = mongoose.model<INotificationQueue>('NotificationQueue', NotificationQueueSchema);

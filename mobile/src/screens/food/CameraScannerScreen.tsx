@@ -9,6 +9,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTheme } from '../../contexts/ThemeContext';
 import { API } from '../../services/api';
+import { prepareImageForAnalysis } from '../../utils/imageUtils';
 
 type ScanMode = 'food' | 'barcode' | 'label';
 
@@ -66,13 +67,14 @@ const CameraScannerScreen: React.FC<Props> = ({ navigation, route }) => {
     try {
       const photo = await cameraRef.current.takePictureAsync({
         quality: 0.6,
-        base64: true,
       });
 
       if (!photo || !photo.uri) throw new Error('Failed to take photo.');
 
+      const prepared = await prepareImageForAnalysis(photo.uri);
+
       if (mode === 'label') {
-        const labelItem = await API.analyzeNutritionLabel(photo.uri, photo.base64);
+        const labelItem = await API.analyzeNutritionLabel(prepared.uri, prepared.base64);
         if (labelItem) {
           navigation.navigate('LogEntry', {
             food: {
@@ -86,15 +88,15 @@ const CameraScannerScreen: React.FC<Props> = ({ navigation, route }) => {
               confidence: 0.95,
               nutritionSource: 'openfoodfacts',
             },
-            imageUri: photo.uri,
+            imageUri: prepared.uri,
           });
         } else {
           Alert.alert('Label Not Read', 'Could not read clear nutrition numbers. Please try again.');
         }
       } else {
         navigation.navigate('Preview', {
-          imageUri: photo.uri,
-          base64: photo.base64,
+          imageUri: prepared.uri,
+          base64: prepared.base64,
         });
       }
     } catch (err: any) {
@@ -142,13 +144,13 @@ const CameraScannerScreen: React.FC<Props> = ({ navigation, route }) => {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: 'images',
         quality: 0.6,
-        base64: true,
       });
 
       if (!result.canceled && result.assets && result.assets[0]) {
+        const prepared = await prepareImageForAnalysis(result.assets[0].uri);
         navigation.navigate('Preview', {
-          imageUri: result.assets[0].uri,
-          base64: result.assets[0].base64 || undefined,
+          imageUri: prepared.uri,
+          base64: prepared.base64,
         });
       }
     } catch (err) {

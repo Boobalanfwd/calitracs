@@ -10,6 +10,7 @@ import {
   Pressable,
   KeyboardAvoidingView,
   Platform,
+  Alert,
 } from 'react-native';
 import { Surface } from 'react-native-paper';
 import { X, Droplet, Plus, Trash2, CheckCircle2, Target } from 'lucide-react-native';
@@ -36,25 +37,45 @@ export const WaterIntakeModal: React.FC<Props> = ({ visible, onClose }) => {
   const [customAmount, setCustomAmount] = useState('');
   const [showGoalEdit, setShowGoalEdit] = useState(false);
   const [targetGoalInput, setTargetGoalInput] = useState('');
+  // Guards against double-taps firing duplicate mutations while a request is
+  // still in flight.
+  const [isSaving, setIsSaving] = useState(false);
 
   const currentIntake = todayLog?.waterIntakeMl || 0;
   const targetWater = targets?.waterMl || 2000;
   const progressPercent = Math.min(100, Math.round((currentIntake / targetWater) * 100));
   const remainingMl = Math.max(0, targetWater - currentIntake);
 
-  const handleAddPreset = async (amountMl: number) => {
-    await updateWaterIntake(amountMl, 'add');
+  const runWaterAction = async (action: () => Promise<boolean>, successMsg?: string) => {
+    if (isSaving) return;
+    setIsSaving(true);
+    try {
+      const ok = await action();
+      if (!ok) {
+        Alert.alert('Error', 'Could not update water intake. Check your connection and try again.');
+      } else if (successMsg) {
+        Alert.alert('Water Logged', successMsg);
+      }
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Could not update water intake. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  const handleAddCustom = async () => {
+  const handleAddPreset = (amountMl: number) => {
+    runWaterAction(() => updateWaterIntake(amountMl, 'add'));
+  };
+
+  const handleAddCustom = () => {
     const amount = parseInt(customAmount, 10);
     if (isNaN(amount) || amount <= 0) return;
-    await updateWaterIntake(amount, 'add');
+    runWaterAction(() => updateWaterIntake(amount, 'add'));
     setCustomAmount('');
   };
 
-  const handleDeleteEntry = async (waterId: string) => {
-    await deleteWaterEntry(waterId);
+  const handleDeleteEntry = (waterId: string) => {
+    runWaterAction(() => deleteWaterEntry(waterId));
   };
 
   const handleSaveGoal = async (newGoal: number) => {
@@ -221,9 +242,10 @@ export const WaterIntakeModal: React.FC<Props> = ({ visible, onClose }) => {
                 {PRESET_CONTAINERS.map((item) => (
                   <TouchableOpacity
                     key={item.id}
-                    style={styles.presetCard}
+                    style={[styles.presetCard, isSaving && styles.presetCardDisabled]}
                     onPress={() => handleAddPreset(item.amount)}
                     activeOpacity={0.7}
+                    disabled={isSaving}
                   >
                     <Text style={styles.presetEmoji}>{item.emoji}</Text>
                     <Text style={styles.presetLabel}>{item.label}</Text>
@@ -244,9 +266,9 @@ export const WaterIntakeModal: React.FC<Props> = ({ visible, onClose }) => {
                   placeholderTextColor="#94A3B8"
                 />
                 <TouchableOpacity
-                  style={[styles.addCustomBtn, !customAmount && styles.addCustomBtnDisabled]}
+                  style={[styles.addCustomBtn, (!customAmount || isSaving) && styles.addCustomBtnDisabled]}
                   onPress={handleAddCustom}
-                  disabled={!customAmount}
+                  disabled={!customAmount || isSaving}
                 >
                   <Plus size={18} color="#FFFFFF" />
                   <Text style={styles.addCustomBtnText}>Add</Text>
@@ -269,6 +291,7 @@ export const WaterIntakeModal: React.FC<Props> = ({ visible, onClose }) => {
                       <TouchableOpacity
                         style={styles.deleteLogBtn}
                         onPress={() => handleDeleteEntry(log._id)}
+                        disabled={isSaving}
                       >
                         <Trash2 size={16} color="#94A3B8" />
                       </TouchableOpacity>
@@ -514,6 +537,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#E2E8F0',
+  },
+  presetCardDisabled: {
+    opacity: 0.5,
   },
   presetEmoji: {
     fontSize: 26,

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useRef } from 'react';
 import {
   View, Text, StyleSheet, StatusBar,
   ScrollView, ActivityIndicator, TouchableOpacity, Image,
@@ -22,6 +22,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { FONTS } from '../../theme/fonts';
 import { ScreenLoader, SkeletonTransition } from '../../components/ui';
+import { getResizedCloudinaryUrl } from '../../utils/imageUtils';
 
 interface Props { navigation: NativeStackNavigationProp<any> }
 
@@ -66,39 +67,41 @@ const CalendarScreen: React.FC<Props> = ({ navigation }) => {
   const [selectedLog, setSelectedLog] = useState<FoodLog | null>(null);
   const [logLoading, setLogLoading] = useState(false);
 
+  // Request guards: only the latest month/log request may update state, so
+  // rapid month/date switching can't render stale data.
+  const monthRequestIdRef = useRef(0);
+  const logRequestIdRef = useRef(0);
+
   const loadMonth = useCallback(async (y: number, m: number) => {
     if (!token) return;
+    const reqId = ++monthRequestIdRef.current;
     setLoading(true);
     try {
       const data = await API.getCalendarMonth(token, y, m);
-      setDays(data.days || []);
+      if (reqId === monthRequestIdRef.current) setDays(data.days || []);
     } catch {
-      setDays([]);
+      if (reqId === monthRequestIdRef.current) setDays([]);
     } finally {
-      setLoading(false);
+      if (reqId === monthRequestIdRef.current) setLoading(false);
     }
   }, [token]);
 
   const loadSelectedLog = useCallback(async (dateStr: string) => {
     if (!token) return;
+    const reqId = ++logRequestIdRef.current;
     setLogLoading(true);
     try {
       const res = await API.getLog(token, dateStr);
-      setSelectedLog(res.log);
+      if (reqId === logRequestIdRef.current) setSelectedLog(res.log);
     } catch {
-      setSelectedLog(null);
+      if (reqId === logRequestIdRef.current) setSelectedLog(null);
     } finally {
-      setLogLoading(false);
+      if (reqId === logRequestIdRef.current) setLogLoading(false);
     }
   }, [token]);
 
-  useEffect(() => { loadMonth(year, month); }, [year, month, loadMonth]);
-
-  useEffect(() => {
-    loadSelectedLog(selectedDateStr);
-  }, [selectedDateStr, loadSelectedLog]);
-
-  // Refresh calendar and selected log whenever screen comes into focus
+  // Single fetch source: refresh month + selected log whenever the screen is
+  // focused OR the current month/date changes (no duplicate mount/focus calls).
   useFocusEffect(
     useCallback(() => {
       loadMonth(year, month);
@@ -183,6 +186,13 @@ const CalendarScreen: React.FC<Props> = ({ navigation }) => {
 
   const calProgress = Math.min(1, targetCalories > 0 ? consumedCalories / targetCalories : 0);
 
+  // Precompute date → day map so the 42-cell grid lookup is O(1), not O(42×31).
+  const daysByDate = useMemo(() => {
+    const map = new Map<string, CalendarDay>();
+    for (const d of days) map.set(d.date, d);
+    return map;
+  }, [days]);
+
   const isInitialLoad = loading && days.length === 0;
 
   return (
@@ -229,7 +239,7 @@ const CalendarScreen: React.FC<Props> = ({ navigation }) => {
           {/* Calendar Day Grid */}
           <View style={styles.gridContainer}>
             {gridCells.map((cell) => {
-              const dayData = days.find((d) => d.date === cell.dateStr);
+              const dayData = daysByDate.get(cell.dateStr);
               const isSelected = cell.dateStr === selectedDateStr;
               const isToday = cell.dateStr === formatDateKey(now);
 
@@ -412,7 +422,7 @@ const CalendarScreen: React.FC<Props> = ({ navigation }) => {
                     >
                       {entry.imageUrl ? (
                         <Image
-                          source={{ uri: entry.imageUrl }}
+                          source={{ uri: getResizedCloudinaryUrl(entry.imageUrl, 64) || undefined }}
                           style={styles.entryEmojiBg as any}
                         />
                       ) : (

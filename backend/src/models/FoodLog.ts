@@ -1,5 +1,6 @@
 import mongoose, { Document, Schema } from 'mongoose';
 import { PortionUnit } from '../services/nutritionCalculator';
+import { isValidDateKey } from '../utils/validation';
 
 export type MealType = 'breakfast' | 'morning_snack' | 'lunch' | 'afternoon_snack' | 'dinner' | 'evening_snack';
 export type EntrySource = 'ai' | 'manual';
@@ -55,25 +56,25 @@ const WaterLogSchema = new Schema<IWaterLogEntry>(
 
 const FoodEntrySchema = new Schema<IFoodEntry>(
   {
-    name: { type: String, required: true, trim: true },
+    name: { type: String, required: true, trim: true, maxlength: 200 },
     meal: {
       type: String,
       required: true,
       enum: ['breakfast', 'morning_snack', 'lunch', 'afternoon_snack', 'dinner', 'evening_snack'],
     },
-    calories: { type: Number, required: true, min: 0 },
-    proteinG: { type: Number, required: true, min: 0, default: 0 },
-    carbsG: { type: Number, required: true, min: 0, default: 0 },
-    fatG: { type: Number, required: true, min: 0, default: 0 },
+    calories: { type: Number, required: true, min: 0, max: 100000 },
+    proteinG: { type: Number, required: true, min: 0, max: 10000, default: 0 },
+    carbsG: { type: Number, required: true, min: 0, max: 10000, default: 0 },
+    fatG: { type: Number, required: true, min: 0, max: 10000, default: 0 },
     portionUnit: {
       type: String,
       default: 'g',
       enum: ['g', 'ml', 'cup', 'glass', 'bowl', 'piece', 'slice', 'scoop', 'tbsp', 'tsp'],
     },
-    portionQuantity: { type: Number, default: 1, min: 0.1 },
-    weightGramsOrMl: { type: Number, default: 100, min: 1 },
-    portionG: { type: Number, min: 1 },
-    portionDescription: { type: String },
+    portionQuantity: { type: Number, default: 1, min: 0.1, max: 1000 },
+    weightGramsOrMl: { type: Number, default: 100, min: 1, max: 100000 },
+    portionG: { type: Number, min: 1, max: 100000 },
+    portionDescription: { type: String, maxlength: 300 },
     isLiquid: { type: Boolean, default: false },
     source: { type: String, enum: ['ai', 'manual'], required: true },
     nutritionSource: {
@@ -83,7 +84,7 @@ const FoodEntrySchema = new Schema<IFoodEntry>(
       default: 'manual',
     },
     confidence: { type: Number, min: 0, max: 1 },
-    imageUrl: { type: String },  // Cloudinary food photo URL
+    imageUrl: { type: String, maxlength: 500 },  // Cloudinary food photo URL
     addedAt: { type: Date, default: Date.now },
   },
   { _id: true }
@@ -101,7 +102,10 @@ const FoodLogSchema = new Schema<IFoodLog>(
       type: String,
       required: true,
       index: true,
-      match: /^\d{4}-\d{2}-\d{2}$/,
+      validate: {
+        validator: isValidDateKey,
+        message: (props) => `Invalid date "${props.value}". Use a real YYYY-MM-DD date.`,
+      },
     },
     entries: { type: [FoodEntrySchema], default: [] },
     waterIntakeMl: { type: Number, default: 0, min: 0 },

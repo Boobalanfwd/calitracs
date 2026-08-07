@@ -29,9 +29,9 @@ const NotificationLogSchema = new Schema<INotificationLog>(
       enum: ['meal_reminder', 'water_reminder', 'daily_checkin', 'calorie_goal', 'streak', 'weekly_summary', 'inactivity'],
       required: true,
     },
-    title: { type: String, required: true },
-    body: { type: String, required: true },
-    expoPushToken: { type: String, required: true },
+    title: { type: String, required: true, maxlength: 300 },
+    body: { type: String, required: true, maxlength: 2000 },
+    expoPushToken: { type: String, required: true, maxlength: 200 },
     status: {
       type: String,
       enum: ['pending', 'sent', 'failed', 'delivered', 'opened'],
@@ -49,5 +49,9 @@ const NotificationLogSchema = new Schema<INotificationLog>(
 
 NotificationLogSchema.index({ userId: 1, createdAt: -1 });
 NotificationLogSchema.index({ expoReceiptId: 1 });
+// Receipt requeue after restart scans status='sent' older than 30s.
+NotificationLogSchema.index({ status: 1, sentAt: 1 });
+// Keep notification history bounded — auto-delete records older than 90 days.
+NotificationLogSchema.index({ createdAt: 1 }, { expireAfterSeconds: 60 * 60 * 24 * 90 });
 
 export const NotificationLog = mongoose.model<INotificationLog>('NotificationLog', NotificationLogSchema);

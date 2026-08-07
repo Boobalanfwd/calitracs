@@ -31,6 +31,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { UserProfile } from '../../types';
 import { FONTS } from '../../theme/fonts';
 import { API } from '../../services/api';
+import { getResizedCloudinaryUrl } from '../../utils/imageUtils';
 
 const ProfileScreen: React.FC = () => {
   const { user, targets, token, logout, updateProfile, updateTargets } = useAuth();
@@ -231,7 +232,7 @@ const ProfileScreen: React.FC = () => {
               </View>
             ) : (localAvatarUri || user?.profile?.avatarUrl) ? (
               <Image
-                source={{ uri: localAvatarUri || user?.profile?.avatarUrl }}
+                source={{ uri: localAvatarUri || getResizedCloudinaryUrl(user?.profile?.avatarUrl, 160) || undefined }}
                 style={[styles.avatarCircle, { overflow: 'hidden' }]}
               />
             ) : (

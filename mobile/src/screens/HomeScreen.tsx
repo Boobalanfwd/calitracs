@@ -14,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
+import { prepareImageForAnalysis } from '../utils/imageUtils';
 
 type HomeScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Home'>;
 
@@ -61,14 +62,14 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: 'images',
         quality: 0.5,
-        base64: true,
         allowsEditing: false,
       });
 
       if (!result.canceled && result.assets && result.assets[0]) {
+        const prepared = await prepareImageForAnalysis(result.assets[0].uri);
         navigation.navigate('Preview', {
-          imageUri: result.assets[0].uri,
-          base64: result.assets[0].base64 || undefined,
+          imageUri: prepared.uri,
+          base64: prepared.base64,
         });
       }
     } catch (err) {
@@ -88,14 +89,14 @@ const HomeScreen: React.FC<Props> = ({ navigation }) => {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: 'images',
         quality: 0.5,
-        base64: true,
         allowsEditing: false,
       });
 
       if (!result.canceled && result.assets && result.assets[0]) {
+        const prepared = await prepareImageForAnalysis(result.assets[0].uri);
         navigation.navigate('Preview', {
-          imageUri: result.assets[0].uri,
-          base64: result.assets[0].base64 || undefined,
+          imageUri: prepared.uri,
+          base64: prepared.base64,
         });
       }
     } catch (err) {

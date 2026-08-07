@@ -4,6 +4,7 @@ import { DeviceToken } from '../models/DeviceToken';
 import { NotificationPreference, NotificationCategory } from '../models/NotificationPreference';
 import { NotificationLog } from '../models/NotificationLog';
 import { enqueueNotification } from '../services/notificationWorker';
+import { isValidTimezone } from '../utils/validation';
 
 const ALL_CATEGORIES: NotificationCategory[] = [
   'meal_reminder',
@@ -14,6 +15,8 @@ const ALL_CATEGORIES: NotificationCategory[] = [
   'weekly_summary',
   'inactivity',
 ];
+
+const MAX_EXPO_TOKEN_LEN = 200;
 
 /**
  * POST /api/notifications/register-token
@@ -34,6 +37,11 @@ export async function registerToken(req: Request, res: Response): Promise<void> 
 
     if (!['ios', 'android'].includes(platform)) {
       res.status(400).json({ success: false, error: 'platform must be "ios" or "android"' });
+      return;
+    }
+
+    if (typeof expoPushToken !== 'string' || expoPushToken.length > MAX_EXPO_TOKEN_LEN) {
+      res.status(400).json({ success: false, error: `expoPushToken must be ${MAX_EXPO_TOKEN_LEN} characters or fewer.` });
       return;
     }
 
@@ -108,6 +116,41 @@ export async function updatePreferences(req: Request, res: Response): Promise<vo
       return;
     }
 
+    // Validate every pref before touching the DB — findOneAndUpdate upserts run
+    // no schema validators, so bad categories/hours would otherwise persist.
+    for (const p of preferences) {
+      if (!p || typeof p !== 'object') {
+        res.status(400).json({ success: false, error: 'Each preference must be an object.' });
+        return;
+      }
+      if (typeof p.category !== 'string' || !(ALL_CATEGORIES as string[]).includes(p.category)) {
+        res.status(400).json({ success: false, error: `category must be one of: ${ALL_CATEGORIES.join(', ')}` });
+        return;
+      }
+      if (
+        p.quietHoursStart !== undefined &&
+        (typeof p.quietHoursStart !== 'number' || !Number.isInteger(p.quietHoursStart) || p.quietHoursStart < 0 || p.quietHoursStart > 23)
+      ) {
+        res.status(400).json({ success: false, error: 'quietHoursStart must be an integer between 0 and 23.' });
+        return;
+      }
+      if (
+        p.quietHoursEnd !== undefined &&
+        (typeof p.quietHoursEnd !== 'number' || !Number.isInteger(p.quietHoursEnd) || p.quietHoursEnd < 0 || p.quietHoursEnd > 23)
+      ) {
+        res.status(400).json({ success: false, error: 'quietHoursEnd must be an integer between 0 and 23.' });
+        return;
+      }
+      if (p.enabled !== undefined && typeof p.enabled !== 'boolean') {
+        res.status(400).json({ success: false, error: 'enabled must be a boolean.' });
+        return;
+      }
+      if (p.timezone !== undefined && !isValidTimezone(p.timezone)) {
+        res.status(400).json({ success: false, error: 'timezone must be a valid IANA timezone (e.g. "Asia/Kolkata").' });
+        return;
+      }
+    }
+
     const updated = await Promise.all(
       preferences.map(async (p) => {
         return NotificationPreference.findOneAndUpdate(
@@ -118,7 +161,7 @@ export async function updatePreferences(req: Request, res: Response): Promise<vo
             ...(p.quietHoursEnd !== undefined && { quietHoursEnd: p.quietHoursEnd }),
             ...(p.timezone && { timezone: p.timezone }),
           },
-          { upsert: true, new: true }
+          { upsert: true, new: true, runValidators: true }
         );
       })
     );

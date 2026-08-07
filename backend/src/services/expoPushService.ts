@@ -3,6 +3,7 @@ import http from 'http';
 
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 const EXPO_RECEIPTS_URL = 'https://exp.host/--/api/v2/push/getReceipts';
+const EXPO_API_TIMEOUT_MS = 10_000;
 
 export interface ExpoPushMessage {
   to: string;
@@ -58,6 +59,12 @@ async function postJson(url: string, body: object): Promise<any> {
           resolve({ data: [] });
         }
       });
+    });
+
+    // Give Expo's API a hard deadline — otherwise a stalled socket pins a
+    // worker tick forever.
+    req.setTimeout(EXPO_API_TIMEOUT_MS, () => {
+      req.destroy(new Error('Expo push API request timed out'));
     });
 
     req.on('error', reject);

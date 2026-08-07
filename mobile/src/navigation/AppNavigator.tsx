@@ -1,9 +1,9 @@
 import React, { useEffect } from 'react';
-import { View, ActivityIndicator } from 'react-native';
 import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useFonts } from 'expo-font';
+import * as SplashScreen from 'expo-splash-screen';
 import { RootStackParamList } from '../types';
 import { AuthProvider, useAuth } from '../contexts/AuthContext';
 import { LogProvider } from '../contexts/LogContext';
@@ -36,6 +36,10 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
  * without needing to call useNavigation() inside NavigationContainer.
  */
 import { navigationRef } from './navigationRef';
+
+// Keep the native splash visible until fonts + auth bootstrap are ready so the
+// user never sees a blank/spinner bridge frame between splash and first screen.
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 const lightPaperTheme = {
   ...MD3LightTheme,
@@ -80,8 +84,28 @@ const NotificationBridge: React.FC<{ token: string | null }> = ({ token }) => {
 };
 
 const AppNavigatorContent: React.FC = () => {
-  const [fontsLoaded] = useFonts(FONT_ASSETS);
+  const [fontsLoaded, fontError] = useFonts(FONT_ASSETS);
   const { isAuthenticated, isLoading, user, token } = useAuth();
+
+  // If the custom fonts fail to load, treat the app as ready anyway — otherwise
+  // `fontsLoaded` stays false forever and the native splash never hides (the app
+  // looks dead at launch). Text falls back to system fonts.
+  const fontsReady = fontsLoaded || Boolean(fontError);
+  const ready = !isLoading && fontsReady;
+
+  // Log the font failure once so it's debuggable, but don't block startup on it.
+  useEffect(() => {
+    if (fontError) {
+      console.warn('[Fonts] Failed to load font assets:', fontError);
+    }
+  }, [fontError]);
+
+  // Hide the native splash once fonts + auth state are ready.
+  useEffect(() => {
+    if (ready) {
+      SplashScreen.hideAsync().catch(() => {});
+    }
+  }, [ready]);
 
   // Track 1 — local offline reminders. Apply schedule once on mount.
   useEffect(() => {
@@ -90,12 +114,8 @@ const AppNavigatorContent: React.FC = () => {
     });
   }, []);
 
-  if (isLoading || !fontsLoaded) {
-    return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FAFAFB' }}>
-        <ActivityIndicator size="large" color="#FF6B2C" />
-      </View>
-    );
+  if (!ready) {
+    return null;
   }
 
   // Determine if the authenticated user still needs to complete onboarding

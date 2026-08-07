@@ -1,7 +1,7 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { User, DailyTarget, UserProfile } from '../types';
 import { saveToken, getToken, saveUser, getUser, clearAuth } from '../services/authStorage';
-import { API } from '../services/api';
+import { API, setAuthToken } from '../services/api';
 
 interface AuthContextValue {
   user: User | null;
@@ -41,18 +41,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (storedToken && cachedUser) {
           setToken(storedToken);
           setUser(cachedUser);
-          // Validate token in background
+          setAuthToken(storedToken);
+          // Validate token in background — fetch profile + targets in parallel.
           try {
-            const me = await API.getMe(storedToken);
+            const [me, t] = await Promise.all([
+              API.getMe(storedToken),
+              API.getTargets(storedToken),
+            ]);
             setUser(me);
             await saveUser(me);
-            const t = await API.getTargets(storedToken);
             setTargets(t);
-          } catch {
-            // Token expired — clear
-            await clearAuth();
-            setToken(null);
-            setUser(null);
+          } catch (err: any) {
+            // Only clear the session on an explicit auth failure (401). A
+            // transient network error must NOT log the user out.
+            if (err?.status === 401) {
+              setAuthToken(null);
+              await clearAuth();
+              setToken(null);
+              setUser(null);
+            }
           }
         }
       } finally {
@@ -65,6 +72,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const handleAuthResponse = useCallback(async (data: { token: string; user: User }) => {
     await saveToken(data.token);
     await saveUser(data.user);
+    setAuthToken(data.token);
     setToken(data.token);
     setUser(data.user);
     // Load targets
@@ -92,6 +100,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [handleAuthResponse]);
 
   const logout = useCallback(async () => {
+    setAuthToken(null);
     await clearAuth();
     setToken(null);
     setUser(null);
@@ -134,13 +143,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setTargets(t);
   }, [token]);
 
+  const contextValue = useMemo<AuthContextValue>(() => ({
+    user, token, targets, isLoading,
+    isAuthenticated: !!user && !!token,
+    login, register, loginAsGuest, logout,
+    updateProfile, updateTargets, convertGuestToUser, refreshTargets,
+  }), [user, token, targets, isLoading, login, register, loginAsGuest, logout, updateProfile, updateTargets, convertGuestToUser, refreshTargets]);
+
   return (
-    <AuthContext.Provider value={{
-      user, token, targets, isLoading,
-      isAuthenticated: !!user && !!token,
-      login, register, loginAsGuest, logout,
-      updateProfile, updateTargets, convertGuestToUser, refreshTargets,
-    }}>
+    <AuthContext.Provider value={contextValue}>
       {children}
     </AuthContext.Provider>
   );

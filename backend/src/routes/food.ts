@@ -1,5 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { uploadMiddleware } from '../middlewares/upload';
+import { authMiddleware } from '../middlewares/auth';
 import {
   analyzeFoodImage,
   detectFoodNames,
@@ -12,6 +13,10 @@ import {
 } from '../controllers/foodController';
 
 const router = Router();
+
+// All food routes require auth — these trigger paid Gemini calls and Cloudinary
+// uploads, so they must not be reachable by anonymous internet traffic.
+router.use(authMiddleware);
 
 // POST /api/food/detect-names (Step 1: Food item name detection ONLY)
 router.post('/detect-names', detectFoodNames);
@@ -49,7 +54,18 @@ router.post('/barcode', barcodeLookup);
 router.post(
   '/analyze-label',
   (req: Request, res: Response, next: NextFunction) => {
-    uploadMiddleware.single('image')(req, res, () => next());
+    uploadMiddleware.single('image')(req, res, (err) => {
+      if (err) {
+        const message =
+          err.code === 'LIMIT_FILE_SIZE'
+            ? 'Image is too large. Please use an image smaller than 10MB.'
+            : err.message || 'Failed to process image upload.';
+
+        res.status(400).json({ success: false, error: message });
+        return;
+      }
+      next();
+    });
   },
   analyzeNutritionLabel
 );

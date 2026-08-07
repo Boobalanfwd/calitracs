@@ -31,6 +31,7 @@ import {
 } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { API } from '../../services/api';
+import { prepareImageForAnalysis, getResizedCloudinaryUrl } from '../../utils/imageUtils';
 
 type FoodDetailEditNavProp = NativeStackNavigationProp<RootStackParamList, 'FoodDetailEdit'>;
 type FoodDetailEditRouteProp = RouteProp<RootStackParamList, 'FoodDetailEdit'>;
@@ -106,7 +107,8 @@ const FoodDetailEditScreen: React.FC<Props> = ({ navigation, route }) => {
   const processUploadImage = async (uri: string) => {
     setIsUploadingImg(true);
     try {
-      const uploadedUrl = await API.uploadFoodImage(uri);
+      const prepared = await prepareImageForAnalysis(uri);
+      const uploadedUrl = await API.uploadFoodImage(prepared.uri, prepared.base64);
       if (uploadedUrl) {
         setImageUrl(uploadedUrl);
         Alert.alert('✅ Photo Updated', 'Food image updated! Tap Save Changes to persist.');
@@ -174,9 +176,13 @@ const FoodDetailEditScreen: React.FC<Props> = ({ navigation, route }) => {
         style: 'destructive',
         onPress: async () => {
           if (foodEntry._id) {
-            await deleteEntry(foodEntry._id, date);
-            await loadTodayLog(date);
-            navigation.goBack();
+            try {
+              await deleteEntry(foodEntry._id, date);
+              await loadTodayLog(date);
+              navigation.goBack();
+            } catch (err: any) {
+              Alert.alert('Error', err?.message || 'Failed to delete entry. Please try again.');
+            }
           }
         },
       },
@@ -212,7 +218,7 @@ const FoodDetailEditScreen: React.FC<Props> = ({ navigation, route }) => {
       <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
         {/* Top Hero Dish Image */}
         <View style={styles.heroContainer}>
-          <Image source={{ uri: imageUrl || DEFAULT_FOOD_HERO }} style={styles.heroImage} />
+          <Image source={{ uri: getResizedCloudinaryUrl(imageUrl, 900) || DEFAULT_FOOD_HERO }} style={styles.heroImage} />
 
           {/* Top Header Floating Overlay Buttons */}
           <SafeAreaView style={styles.headerOverlay} edges={['top']}>

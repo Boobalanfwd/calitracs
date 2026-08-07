@@ -6,6 +6,7 @@ import {
   Camera, ScanBarcode, Tag, Image as ImageIcon, Edit3, ChevronRight,
 } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
+import { prepareImageForAnalysis } from '../utils/imageUtils';
 
 interface AddFoodModalProps {
   visible: boolean;
@@ -26,14 +27,14 @@ export const AddFoodModal: React.FC<AddFoodModalProps> = ({
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
         quality: 0.7,
-        base64: true,
       });
 
       if (!result.canceled && result.assets && result.assets[0]) {
+        const prepared = await prepareImageForAnalysis(result.assets[0].uri);
         const rootNav = navigation.getParent() || navigation;
         rootNav.navigate('Preview' as any, {
-          imageUri: result.assets[0].uri,
-          base64: result.assets[0].base64 || undefined,
+          imageUri: prepared.uri,
+          base64: prepared.base64,
           targetMeal,
         });
       }

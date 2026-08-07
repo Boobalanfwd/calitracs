@@ -1,4 +1,7 @@
 import crypto from 'crypto';
+import { withRetry } from '../utils/retry';
+
+const CLOUDINARY_TIMEOUT_MS = 15_000;
 
 /**
  * Cloudinary folder structure for FoodLens AI
@@ -60,27 +63,34 @@ const uploadBuffer = async (
     return null;
   }
 
+  const timestamp = Math.floor(Date.now() / 1000);
+  // Signature must match exactly: sorted params + secret (no leading/trailing spaces)
+  const signatureStr = `folder=${folder}&timestamp=${timestamp}${apiSecret}`;
+  const signature = crypto.createHash('sha1').update(signatureStr).digest('hex');
+
+  const base64Image = `data:${mimeType};base64,${imageBuffer.toString('base64')}`;
+
+  const formData = new URLSearchParams();
+  formData.append('file', base64Image);
+  formData.append('api_key', apiKey);
+  formData.append('timestamp', timestamp.toString());
+  formData.append('signature', signature);
+  formData.append('folder', folder);
+
+  const uploadUrl = `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`;
+  console.log(
+    `[Cloudinary] ⬆️  Uploading to folder "${folder}" (${Math.round(imageBuffer.length / 1024)}KB)...`
+  );
+
   try {
-    const timestamp = Math.floor(Date.now() / 1000);
-    // Signature must match exactly: sorted params + secret (no leading/trailing spaces)
-    const signatureStr = `folder=${folder}&timestamp=${timestamp}${apiSecret}`;
-    const signature = crypto.createHash('sha1').update(signatureStr).digest('hex');
-
-    const base64Image = `data:${mimeType};base64,${imageBuffer.toString('base64')}`;
-
-    const formData = new URLSearchParams();
-    formData.append('file', base64Image);
-    formData.append('api_key', apiKey);
-    formData.append('timestamp', timestamp.toString());
-    formData.append('signature', signature);
-    formData.append('folder', folder);
-
-    const uploadUrl = `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`;
-    console.log(
-      `[Cloudinary] ⬆️  Uploading to folder "${folder}" (${Math.round(imageBuffer.length / 1024)}KB)...`
+    const res = await withRetry(
+      () => fetch(uploadUrl, { method: 'POST', body: formData, signal: AbortSignal.timeout(CLOUDINARY_TIMEOUT_MS) }),
+      {
+        retries: 2,
+        onRetry: (err, attempt) =>
+          console.warn(`[Cloudinary] Upload attempt ${attempt} failed, retrying...`, (err as Error).message),
+      }
     );
-
-    const res = await fetch(uploadUrl, { method: 'POST', body: formData });
 
     if (!res.ok) {
       const errText = await res.text();

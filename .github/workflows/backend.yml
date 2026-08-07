@@ -1,0 +1,58 @@
+name: Backend CI/CD
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    name: Build + tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck + build
+        run: npm run build
+
+      - name: Run tests
+        run: npm test
+
+  deploy:
+    name: Deploy to Render & Railway
+    needs: ci
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to Render
+        if: ${{ secrets.RENDER_DEPLOY_HOOK != '' }}
+        run: curl -fsS --max-time 60 -X POST "${{ secrets.RENDER_DEPLOY_HOOK }}"
+
+      - name: Deploy to Railway
+        if: ${{ secrets.RAILWAY_DEPLOY_HOOK != '' }}
+        run: curl -fsS --max-time 60 -X POST "${{ secrets.RAILWAY_DEPLOY_HOOK }}"
