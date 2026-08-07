@@ -50,6 +50,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      # Suppress the "using Expo Go for production" advisory warning
+      EAS_BUILD_NO_EXPO_GO_WARNING: 'true'
     defaults:
       run:
         working-directory: mobile
@@ -73,6 +75,16 @@ jobs:
           echo "::warning::EXPO_TOKEN secret is not set — skipping EAS build."
           echo "Add it at: Settings > Secrets > Actions > New repository secret"
 
-      - name: EAS Build (all platforms)
+      # --no-wait: submit the build to Expo's servers and exit immediately.
+      # Builds run remotely (20–30 min); no need to block the GitHub runner.
+      - name: EAS Build — Android
         if: ${{ env.EXPO_TOKEN != '' }}
-        run: npx --yes eas-cli build --platform all --profile production --non-interactive
+        run: npx --yes eas-cli build --platform android --profile production --non-interactive --no-wait
+
+      # iOS build — disabled until Distribution Certificate is validated.
+      # To enable: run `eas credentials --platform ios` locally once,
+      # then uncomment the step below.
+      #
+      # - name: EAS Build — iOS
+      #   if: ${{ env.EXPO_TOKEN != '' }}
+      #   run: npx --yes eas-cli build --platform ios --profile production --non-interactive --no-wait
