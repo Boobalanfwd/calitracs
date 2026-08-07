@@ -13,6 +13,7 @@ import { useLog } from '../../contexts/LogContext';
 import { API } from '../../services/api';
 import { FONTS } from '../../theme/fonts';
 import { ScreenLoader, SkeletonTransition } from '../../components/ui';
+import { formatDateKey, todayDateKey } from '../../utils/dates';
 
 const { width } = Dimensions.get('window');
 
@@ -33,8 +34,8 @@ const getWeekDays = (weekOffset = 0) => {
   for (let i = 0; i < 7; i++) {
     const d = new Date(monday);
     d.setDate(monday.getDate() + i);
-    const dateStr = d.toISOString().split('T')[0];
-    const isToday = dateStr === new Date().toISOString().split('T')[0];
+    const dateStr = formatDateKey(d);
+    const isToday = dateStr === todayDateKey();
     days.push({
       day: dayNames[i],
       dateStr,
@@ -205,7 +206,7 @@ const ProgressScreen: React.FC = () => {
       try {
         const waterRes = await API.getWeeklyWater(token, startDateStr);
         const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-        const todayStr = new Date().toISOString().split('T')[0];
+        const todayStr = todayDateKey();
         const mapped = waterRes.days.map((d, i) => ({
           date: d.date,
           waterMl: d.waterMl,

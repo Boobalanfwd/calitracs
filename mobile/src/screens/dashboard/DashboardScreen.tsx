@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View, Text, StyleSheet, StatusBar,
-  ScrollView, TouchableOpacity, RefreshControl, Image, Alert, Animated,
+  ScrollView, TouchableOpacity, RefreshControl, Image, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Surface, Portal, Dialog, Button } from 'react-native-paper';
@@ -19,7 +19,8 @@ import { WaterIntakeModal } from '../../components/WaterIntakeModal';
 import { AddFoodModal } from '../../components/AddFoodModal';
 import { NotificationCenterModal } from '../../components/NotificationCenterModal';
 import { notificationService } from '../../services/notificationService';
-import { ScreenLoader, SkeletonTransition } from '../../components/ui';
+import { ScreenLoader, ScreenError, SkeletonTransition } from '../../components/ui';
+import { getResizedCloudinaryUrl } from '../../utils/imageUtils';
 
 interface Props { navigation: NativeStackNavigationProp<any> }
 
@@ -28,7 +29,7 @@ const MEAL_ORDER: MealType[] = ['breakfast', 'morning_snack', 'lunch', 'afternoo
 // Default food image fallback
 const DEFAULT_FOOD_IMG = 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=200&q=80';
 
-const CircularProgressRing = ({
+const CircularProgressRing = React.memo(({
   size = 76,
   strokeWidth = 6,
   progress = 0.5,
@@ -45,7 +46,8 @@ const CircularProgressRing = ({
 }) => {
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
-  const strokeDashoffset = circumference * (1 - Math.min(1, Math.max(0, progress)));
+  const clampedProgress = Math.min(1, Math.max(0, progress));
+  const strokeDashoffset = circumference * (1 - clampedProgress);
 
   return (
     <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
@@ -73,12 +75,12 @@ const CircularProgressRing = ({
       {children}
     </View>
   );
-};
+}, (prev, next) => prev.progress === next.progress && prev.color === next.color && prev.size === next.size);
 
 const DashboardScreen: React.FC<Props> = ({ navigation }) => {
   const { user, targets } = useAuth();
   const { theme } = useTheme();
-  const { todayLog, isLoadingLog, loadTodayLog, getEntriesByMeal, deleteEntry, updateWaterIntake } = useLog();
+  const { todayLog, isLoadingLog, loadError, loadTodayLog, getEntriesByMeal, deleteEntry, updateWaterIntake } = useLog();
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [fabOpen, setFabOpen] = useState(false);
   const [waterModalVisible, setWaterModalVisible] = useState(false);
@@ -102,8 +104,6 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
     setShowAddFoodModal(true);
   };
 
-  const progressAnim = useRef(new Animated.Value(0)).current;
-
   const formatDateKey = (d: Date) => {
     const year = d.getFullYear();
     const month = String(d.getMonth() + 1).padStart(2, '0');
@@ -111,10 +111,8 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
     return `${year}-${month}-${day}`;
   };
 
-  useEffect(() => {
-    loadTodayLog(formatDateKey(selectedDate));
-  }, [selectedDate, loadTodayLog]);
-
+  // Single fetch source: reload the selected day's log whenever the screen is
+  // focused or the selected date changes (no duplicate mount/focus fetches).
   useFocusEffect(
     useCallback(() => {
       loadTodayLog(formatDateKey(selectedDate));
@@ -127,7 +125,6 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
 
   const handleDateSelect = (d: Date) => {
     setSelectedDate(d);
-    loadTodayLog(formatDateKey(d));
   };
 
   const consumed = todayLog?.totalCalories ?? 0;
@@ -161,19 +158,6 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
     if (isZeroLogged) return 2.5;
     return Math.min(95, Math.max(12, Math.round((consumed / targetCal) * 100)));
   }, [consumed, targetCal, isOverTarget, isZeroLogged]);
-
-  useEffect(() => {
-    Animated.timing(progressAnim, {
-      toValue: targetPct,
-      duration: 800,
-      useNativeDriver: false,
-    }).start();
-  }, [targetPct]);
-
-  const animatedBannerWidth = progressAnim.interpolate({
-    inputRange: [0, 100],
-    outputRange: ['0%', '100%'],
-  });
 
   // Date strip generator
   const generateScrollableDays = useCallback(() => {
@@ -210,6 +194,28 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
 
   const isInitialLoad = isLoadingLog && !todayLog;
 
+  // If the very first load for this date failed and there's nothing to show,
+  // surface a retryable error state instead of a misleading "no food logged".
+  const showLoadError =
+    loadError !== null &&
+    !isLoadingLog &&
+    todayLog !== null &&
+    todayLog.entries.length === 0 &&
+    (todayLog.waterLogs ?? []).length === 0;
+
+  if (showLoadError) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: '#F8FAFC' }]} edges={['top']}>
+        <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
+        <ScreenError
+          variant="network"
+          message={loadError || 'Could not load your food log. Please try again.'}
+          onRetry={onRefresh}
+        />
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SkeletonTransition
       isLoading={isInitialLoad}
@@ -229,7 +235,7 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
             <TouchableOpacity onPress={() => (navigation as any).navigate('Profile')} activeOpacity={0.8}>
               {user?.profile?.avatarUrl ? (
-                <Image source={{ uri: user.profile.avatarUrl }} style={styles.avatarCircle} />
+                <Image source={{ uri: getResizedCloudinaryUrl(user.profile.avatarUrl, 88) || undefined }} style={styles.avatarCircle} />
               ) : (
                 <View style={styles.avatarCircle}>
                   <Text style={styles.avatarText}>{user?.name?.charAt(0) || 'U'}</Text>
@@ -441,7 +447,7 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
                       {/* Left Dish Photo */}
                       {item.imageUrl ? (
                         <Image
-                          source={{ uri: item.imageUrl }}
+                          source={{ uri: getResizedCloudinaryUrl(item.imageUrl, 96) || undefined }}
                           style={styles.foodItemImg}
                         />
                       ) : (
@@ -584,7 +590,11 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
                 if (deleteConfirmItem) {
                   const targetId = deleteConfirmItem.id;
                   setDeleteConfirmItem(null);
-                  await deleteEntry(targetId);
+                  try {
+                    await deleteEntry(targetId);
+                  } catch (e: any) {
+                    Alert.alert('Error', e?.message || 'Failed to delete entry. Please try again.');
+                  }
                 }
               }}
             >

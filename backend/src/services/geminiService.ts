@@ -1,6 +1,11 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { lookupNutrition } from './nutritionService';
 import { getAvailablePortionOptions, PortionOption } from './nutritionCalculator';
+import { withRetry } from '../utils/retry';
+import { sanitizeNutrition } from '../utils/validation';
+
+const GEMINI_IMAGE_TIMEOUT_MS = 45_000;
+const GEMINI_TEXT_TIMEOUT_MS = 15_000;
 
 export interface GeminiFood {
   name: string;
@@ -183,9 +188,15 @@ export const analyzeImageWithGemini = async (
 
   let responseText = '';
   try {
-    const result = await model.generateContent([FOOD_RECOGNITION_PROMPT, imagePart]);
+    const result = await withRetry(
+      () => model.generateContent([FOOD_RECOGNITION_PROMPT, imagePart], { timeout: GEMINI_IMAGE_TIMEOUT_MS }),
+      {
+        retries: 2,
+        onRetry: (err, attempt) =>
+          console.warn(`[Gemini] generateContent attempt ${attempt} failed, retrying...`, (err as Error).message),
+      }
+    );
     responseText = result.response.text().trim();
-    console.log('[Gemini] Raw response:', responseText);
   } catch (apiErr: any) {
     console.error('[Gemini] API generateContent error:', apiErr);
     throw new Error(`Gemini AI service error: ${apiErr.message || 'Unable to process image'}`);
@@ -212,24 +223,29 @@ export const analyzeImageWithGemini = async (
           const isLiquid = Boolean(rawFood.is_liquid);
           const nutrition = await lookupNutrition(foodName, rawFood);
 
-          const typicalPortionG = safeNumber(rawFood.typical_portion_g || nutrition.portionG, 150);
+          // Clamp everything to physiologically-sane ranges so a Gemini
+          // hallucination can't persist absurd or infinite numbers.
+          const typicalPortionG = sanitizeNutrition(
+            rawFood.typical_portion_g || nutrition.portionG,
+            150, 5, 10000
+          );
 
           // Calculate 100g/100ml base metrics
-          const caloriesPer100gOrMl = safeNumber(
+          const caloriesPer100gOrMl = sanitizeNutrition(
             rawFood.calories_per_100g || (nutrition.scaledCalories / (typicalPortionG / 100)),
-            150
+            150, 0, 2000
           );
-          const proteinGPer100gOrMl = safeNumber(
+          const proteinGPer100gOrMl = sanitizeNutrition(
             rawFood.protein_g_per_100g || (nutrition.scaledProteinG / (typicalPortionG / 100)),
-            6
+            6, 0, 100, 1
           );
-          const carbsGPer100gOrMl = safeNumber(
+          const carbsGPer100gOrMl = sanitizeNutrition(
             rawFood.carbs_g_per_100g || (nutrition.scaledCarbsG / (typicalPortionG / 100)),
-            25
+            25, 0, 100, 1
           );
-          const fatGPer100gOrMl = safeNumber(
+          const fatGPer100gOrMl = sanitizeNutrition(
             rawFood.fat_g_per_100g || (nutrition.scaledFatG / (typicalPortionG / 100)),
-            5
+            5, 0, 100, 1
           );
 
           // Available measurement portion options
@@ -239,10 +255,10 @@ export const analyzeImageWithGemini = async (
             name: foodName,
             confidence,
             isLiquid,
-            calories: safeNumber(nutrition.scaledCalories, Math.round(caloriesPer100gOrMl * (typicalPortionG / 100))),
-            proteinG: safeNumber(nutrition.scaledProteinG, Math.round(proteinGPer100gOrMl * (typicalPortionG / 100))),
-            carbsG: safeNumber(nutrition.scaledCarbsG, Math.round(carbsGPer100gOrMl * (typicalPortionG / 100))),
-            fatG: safeNumber(nutrition.scaledFatG, Math.round(fatGPer100gOrMl * (typicalPortionG / 100))),
+            calories: sanitizeNutrition(nutrition.scaledCalories, Math.round(caloriesPer100gOrMl * (typicalPortionG / 100)), 0, 5000),
+            proteinG: sanitizeNutrition(nutrition.scaledProteinG, Math.round(proteinGPer100gOrMl * (typicalPortionG / 100)), 0, 500, 1),
+            carbsG: sanitizeNutrition(nutrition.scaledCarbsG, Math.round(carbsGPer100gOrMl * (typicalPortionG / 100)), 0, 500, 1),
+            fatG: sanitizeNutrition(nutrition.scaledFatG, Math.round(fatGPer100gOrMl * (typicalPortionG / 100)), 0, 500, 1),
             portionG: typicalPortionG,
             portionDescription: rawFood.portion_description || `1 serving (approx ${typicalPortionG}${isLiquid ? 'ml' : 'g'})`,
             nutritionSource: nutrition.source || 'gemini_estimate',
@@ -341,21 +357,28 @@ Return ONLY valid JSON format:
 }`;
 
   try {
-    const result = await model.generateContent([prompt]);
+    const result = await withRetry(
+      () => model.generateContent([prompt], { timeout: GEMINI_TEXT_TIMEOUT_MS }),
+      {
+        retries: 1,
+        onRetry: (err, attempt) =>
+          console.warn(`[Gemini] Text lookup attempt ${attempt} failed, retrying...`, (err as Error).message),
+      }
+    );
     const text = result.response.text().trim();
     const cleaned = cleanJsonString(text);
     const parsed = JSON.parse(cleaned);
     const resultItems = Array.isArray(parsed.items) ? parsed.items : [];
 
     return resultItems.map((item: any) => ({
-      name: (item.name || 'Food Item').trim(),
-      portionG: safeNumber(item.portionG, 150),
-      portionDescription: item.portionDescription || `${item.portionG || 150}g`,
-      calories: safeNumber(item.calories, 200),
-      proteinG: safeNumber(item.proteinG, 8),
-      carbsG: safeNumber(item.carbsG, 30),
-      fatG: safeNumber(item.fatG, 6),
-      fiberG: safeNumber(item.fiberG, 3),
+      name: String(item.name || 'Food Item').trim().slice(0, 200),
+      portionG: sanitizeNutrition(item.portionG, 150, 5, 10000),
+      portionDescription: String(item.portionDescription || `${item.portionG || 150}g`).slice(0, 200),
+      calories: sanitizeNutrition(item.calories, 200, 0, 5000),
+      proteinG: sanitizeNutrition(item.proteinG, 8, 0, 500, 1),
+      carbsG: sanitizeNutrition(item.carbsG, 30, 0, 500, 1),
+      fatG: sanitizeNutrition(item.fatG, 6, 0, 500, 1),
+      fiberG: sanitizeNutrition(item.fiberG, 3, 0, 200, 1),
     }));
   } catch (err) {
     console.error('[Gemini] Text lookup error:', err);
@@ -388,7 +411,14 @@ export const detectFoodNamesOnly = async (
   const imagePart = { inlineData: { data: imageBuffer.toString('base64'), mimeType } };
   const prompt = `Identify food items visible in this photo. Return JSON: {"is_food": true, "foods": [{"name": "Food Name", "confidence": 0.95}]}`;
   try {
-    const res = await model.generateContent([prompt, imagePart]);
+    const res = await withRetry(
+      () => model.generateContent([prompt, imagePart], { timeout: GEMINI_IMAGE_TIMEOUT_MS }),
+      {
+        retries: 1,
+        onRetry: (err, attempt) =>
+          console.warn(`[Gemini] detectFoodNames attempt ${attempt} failed, retrying...`, (err as Error).message),
+      }
+    );
     const cleaned = cleanJsonString(res.response.text());
     const parsed = JSON.parse(cleaned);
     return {
@@ -414,9 +444,24 @@ export const analyzeNutritionLabelWithGemini = async (
   const imagePart = { inlineData: { data: imageBuffer.toString('base64'), mimeType } };
   const prompt = `Extract nutrition facts label from image. Return JSON: {"name": "Product Name", "servingSize": "1 container (240ml)", "calories": 150, "proteinG": 8, "carbsG": 12, "fatG": 5}`;
   try {
-    const res = await model.generateContent([prompt, imagePart]);
+    const res = await withRetry(
+      () => model.generateContent([prompt, imagePart], { timeout: GEMINI_IMAGE_TIMEOUT_MS }),
+      {
+        retries: 1,
+        onRetry: (err, attempt) =>
+          console.warn(`[Gemini] analyzeLabel attempt ${attempt} failed, retrying...`, (err as Error).message),
+      }
+    );
     const cleaned = cleanJsonString(res.response.text());
-    return JSON.parse(cleaned);
+    const parsed = JSON.parse(cleaned);
+    return {
+      name: String(parsed.name || 'Food Item').trim().slice(0, 200),
+      servingSize: String(parsed.servingSize || '').trim().slice(0, 200),
+      calories: sanitizeNutrition(parsed.calories, 150, 0, 5000),
+      proteinG: sanitizeNutrition(parsed.proteinG, 8, 0, 500, 1),
+      carbsG: sanitizeNutrition(parsed.carbsG, 20, 0, 500, 1),
+      fatG: sanitizeNutrition(parsed.fatG, 5, 0, 500, 1),
+    };
   } catch {
     return null;
   }

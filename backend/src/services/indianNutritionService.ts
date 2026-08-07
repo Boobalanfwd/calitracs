@@ -118,16 +118,19 @@ async function fetchFromNutritionixInstant(
   foodName: string
 ): Promise<NutritionPer100g | null> {
   try {
+    const appId = process.env.NUTRITIONIX_APP_ID;
+    const appKey = process.env.NUTRITIONIX_APP_KEY;
+    // Fail closed — never fall back to committed credentials.
+    if (!appId || !appKey) return null;
+
     const encoded = encodeURIComponent(foodName);
     const url = `https://trackapi.nutritionix.com/v2/search/instant?query=${encoded}&detailed=true`;
 
     const res = await fetch(url, {
       signal: AbortSignal.timeout(5000),
       headers: {
-        'x-app-id': process.env.NUTRITIONIX_APP_ID || 'c0b26e81',
-        'x-app-key':
-          process.env.NUTRITIONIX_APP_KEY ||
-          '1f4b49c4adc6d384e7f4e87f0c1c8d0e',
+        'x-app-id': appId,
+        'x-app-key': appKey,
         'x-remote-user-id': '0', // required by instant endpoint for anonymous use
       },
     });

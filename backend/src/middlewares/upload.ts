@@ -5,6 +5,11 @@ const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic
 const MAX_SIZE_MB = 10;
 const MAX_SIZE_BYTES = MAX_SIZE_MB * 1024 * 1024;
 
+// Reused by the base64 upload paths (which bypass multer) so the same whitelist
+// applies regardless of how the image arrives.
+export const isAllowedImageMime = (mimeType: string): boolean =>
+  ALLOWED_MIME_TYPES.includes(mimeType);
+
 // Store in memory so we can send to Gemini as base64
 const storage = multer.memoryStorage();
 

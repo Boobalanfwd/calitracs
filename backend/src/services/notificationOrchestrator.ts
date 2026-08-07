@@ -3,7 +3,7 @@ import mongoose from 'mongoose';
 import { FoodLog } from '../models/FoodLog';
 import { DailyTarget } from '../models/DailyTarget';
 import { User } from '../models/User';
-import { enqueueNotification } from './notificationWorker';
+import { enqueueNotification, enqueueNotifications } from './notificationWorker';
 
 // ─── Event-Based Triggers ──────────────────────────────────────────────────
 
@@ -92,15 +92,16 @@ function scheduleInactivityScan(): void {
 
       console.log(`[Orchestrator] ${inactiveUsers.length} inactive users found for ${today}`);
 
-      for (const u of inactiveUsers) {
-        await enqueueNotification(
-          u._id,
-          'inactivity',
-          '👋 Don\'t forget to log today!',
-          `Hey ${u.name?.split(' ')[0] || 'there'}! You haven't logged any meals yet today. Tap to track your nutrition with AI. 🥗`,
-          { screen: 'log', type: 'inactivity' }
-        );
-      }
+      // Batch insert in one write instead of one insert per user.
+      await enqueueNotifications(
+        inactiveUsers.map((u) => ({
+          userId: u._id,
+          category: 'inactivity' as const,
+          title: '👋 Don\'t forget to log today!',
+          body: `Hey ${u.name?.split(' ')[0] || 'there'}! You haven't logged any meals yet today. Tap to track your nutrition with AI. 🥗`,
+          data: { screen: 'log', type: 'inactivity' },
+        }))
+      );
     } catch (err: any) {
       console.error('[Orchestrator] Inactivity scan error:', err.message);
     }
@@ -134,15 +135,15 @@ function scheduleWeeklySummary(): void {
 
       console.log(`[Orchestrator] ${activeThisWeek.length} users eligible for weekly summary`);
 
-      for (const entry of activeThisWeek) {
-        await enqueueNotification(
-          entry._id,
-          'weekly_summary',
-          '📊 Your Weekly Nutrition Summary',
-          `You logged meals on ${entry.days} of 7 days this week. Check your weekly insights now! 🎉`,
-          { screen: 'dashboard', type: 'weekly_summary' }
-        );
-      }
+      await enqueueNotifications(
+        activeThisWeek.map((entry) => ({
+          userId: entry._id,
+          category: 'weekly_summary' as const,
+          title: '📊 Your Weekly Nutrition Summary',
+          body: `You logged meals on ${entry.days} of 7 days this week. Check your weekly insights now! 🎉`,
+          data: { screen: 'dashboard', type: 'weekly_summary' },
+        }))
+      );
     } catch (err: any) {
       console.error('[Orchestrator] Weekly summary error:', err.message);
     }

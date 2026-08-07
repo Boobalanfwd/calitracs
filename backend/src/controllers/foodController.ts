@@ -2,6 +2,10 @@ import { Request, Response } from 'express';
 import { analyzeImageWithGemini } from '../services/geminiService';
 import { FoodAnalysis } from '../models/FoodAnalysis';
 import { isDBConnected } from '../config/db';
+import { isAllowedImageMime } from '../middlewares/upload';
+import { sanitizeNutrition, isFiniteNumber } from '../utils/validation';
+
+const VALID_PORTION_UNITS = ['g', 'ml', 'cup', 'glass', 'bowl', 'piece', 'slice', 'scoop', 'tbsp', 'tsp'];
 
 export const analyzeFoodImage = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -29,6 +33,10 @@ export const analyzeFoodImage = async (req: Request, res: Response): Promise<voi
         success: false,
         error: 'No image provided. Please upload a food photo.',
       });
+      return;
+    }
+    if (!isAllowedImageMime(mimetype)) {
+      res.status(415).json({ success: false, error: 'Unsupported image format. Please use JPEG, PNG, WEBP, HEIC, or HEIF.' });
       return;
     }
 
@@ -80,7 +88,7 @@ export const analyzeFoodImage = async (req: Request, res: Response): Promise<voi
 
     res.status(500).json({
       success: false,
-      error: err.message || 'Failed to analyze image. Please try again.',
+      error: 'Failed to analyze image. Please try again.',
     });
   }
 };
@@ -147,27 +155,28 @@ export const barcodeLookup = async (req: Request, res: Response): Promise<void> 
 
     const p = data.product;
     const nutriments = p.nutriments || {};
-    const name = p.product_name || p.product_name_en || 'Packaged Product';
-    const cal = nutriments['energy-kcal_100g'] ?? nutriments['energy_100g'] ?? 150;
-    const protein = nutriments['proteins_100g'] ?? 0;
-    const carbs = nutriments['carbohydrates_100g'] ?? 0;
-    const fat = nutriments['fat_100g'] ?? 0;
-    const fiber = nutriments['fiber_100g'] ?? 0;
-    const serving = p.serving_size || '100g';
+    // OFF data can be missing, zero, or insane — clamp to sane ranges.
+    const name = String(p.product_name || p.product_name_en || 'Packaged Product').trim().slice(0, 200);
+    const cal = sanitizeNutrition(nutriments['energy-kcal_100g'] ?? nutriments['energy_100g'] ?? 150, 150, 0, 2000);
+    const protein = sanitizeNutrition(nutriments['proteins_100g'] ?? 0, 0, 0, 100, 1);
+    const carbs = sanitizeNutrition(nutriments['carbohydrates_100g'] ?? 0, 0, 0, 100, 1);
+    const fat = sanitizeNutrition(nutriments['fat_100g'] ?? 0, 0, 0, 100, 1);
+    const fiber = sanitizeNutrition(nutriments['fiber_100g'] ?? 0, 0, 0, 100, 1);
+    const serving = String(p.serving_size || '100g').trim().slice(0, 200);
 
     res.status(200).json({
       success: true,
       product: {
         name,
-        brand: p.brands || '',
+        brand: String(p.brands || '').slice(0, 200),
         barcode,
         portionDescription: serving,
         portionG: 100,
-        calories: Math.round(Number(cal)),
-        proteinG: Math.round(Number(protein) * 10) / 10,
-        carbsG: Math.round(Number(carbs) * 10) / 10,
-        fatG: Math.round(Number(fat) * 10) / 10,
-        fiberG: Math.round(Number(fiber) * 10) / 10,
+        calories: Math.round(cal),
+        proteinG: Math.round(protein * 10) / 10,
+        carbsG: Math.round(carbs * 10) / 10,
+        fatG: Math.round(fat * 10) / 10,
+        fiberG: Math.round(fiber * 10) / 10,
         imageUrl: p.image_front_small_url || p.image_url || '',
       },
     });
@@ -193,6 +202,10 @@ export const analyzeNutritionLabel = async (req: Request, res: Response): Promis
 
     if (!buffer || !mimetype) {
       res.status(400).json({ success: false, error: 'No image provided for label analysis.' });
+      return;
+    }
+    if (!isAllowedImageMime(mimetype)) {
+      res.status(415).json({ success: false, error: 'Unsupported image format. Please use JPEG, PNG, WEBP, HEIC, or HEIF.' });
       return;
     }
 
@@ -236,6 +249,10 @@ export const detectFoodNames = async (req: Request, res: Response): Promise<void
       res.status(400).json({ success: false, error: 'No image provided.' });
       return;
     }
+    if (!isAllowedImageMime(mimetype)) {
+      res.status(415).json({ success: false, error: 'Unsupported image format. Please use JPEG, PNG, WEBP, HEIC, or HEIF.' });
+      return;
+    }
 
     const { detectFoodNamesOnly } = await import('../services/geminiService');
     const result = await detectFoodNamesOnly(buffer, mimetype);
@@ -269,6 +286,10 @@ export const uploadFoodImage = async (req: Request, res: Response): Promise<void
       res.status(400).json({ success: false, error: 'No image provided for upload.' });
       return;
     }
+    if (!isAllowedImageMime(mimeType)) {
+      res.status(415).json({ success: false, error: 'Unsupported image format. Please use JPEG, PNG, WEBP, HEIC, or HEIF.' });
+      return;
+    }
 
     // Food log diary photos go to foodlens/food_logs/
     const { uploadFoodLogImage } = await import('../services/cloudinaryService');
@@ -287,8 +308,8 @@ export const uploadFoodImage = async (req: Request, res: Response): Promise<void
 
 export const saveFoodFeedback = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { analysisId, rating, feedbackText, correctedFoods } = req.body;
-    console.log(`[Feedback Received] Analysis ID: ${analysisId}, Rating: ${rating}`, feedbackText);
+    const { analysisId, rating } = req.body;
+    console.log(`[Feedback Received] Analysis ID: ${analysisId}, Rating: ${rating}`);
     res.status(200).json({ success: true, message: 'Feedback recorded successfully.' });
   } catch (err: any) {
     res.status(500).json({ success: false, error: 'Failed to record feedback.' });
@@ -303,13 +324,38 @@ export const convertPortion = async (req: Request, res: Response): Promise<void>
       return;
     }
 
+    if (typeof unit !== 'string' || !VALID_PORTION_UNITS.includes(unit)) {
+      res.status(400).json({ success: false, error: `unit must be one of: ${VALID_PORTION_UNITS.join(', ')}` });
+      return;
+    }
+    if (typeof baseNutrition !== 'object' || Array.isArray(baseNutrition)) {
+      res.status(400).json({ success: false, error: 'baseNutrition must be an object.' });
+      return;
+    }
+    for (const key of ['caloriesPer100gOrMl', 'proteinGPer100gOrMl', 'carbsGPer100gOrMl', 'fatGPer100gOrMl']) {
+      if (baseNutrition[key] !== undefined && !isFiniteNumber(baseNutrition[key])) {
+        res.status(400).json({ success: false, error: `baseNutrition.${key} must be a finite number.` });
+        return;
+      }
+    }
+
+    const qty = Number(quantity);
+    if (!Number.isFinite(qty) || qty <= 0 || qty > 1000) {
+      res.status(400).json({ success: false, error: 'quantity must be a number between 0 and 1000.' });
+      return;
+    }
+
+    const customEquiv =
+      customEquivGramsOrMl === undefined || customEquivGramsOrMl === null
+        ? undefined
+        : Number(customEquivGramsOrMl);
+    if (customEquiv !== undefined && (!Number.isFinite(customEquiv) || customEquiv <= 0 || customEquiv > 100000)) {
+      res.status(400).json({ success: false, error: 'customEquivGramsOrMl must be a number between 0 and 100000.' });
+      return;
+    }
+
     const { calculatePortionNutrition } = await import('../services/nutritionCalculator');
-    const result = calculatePortionNutrition(
-      baseNutrition,
-      unit,
-      Number(quantity) || 1,
-      customEquivGramsOrMl ? Number(customEquivGramsOrMl) : undefined
-    );
+    const result = calculatePortionNutrition(baseNutrition, unit as any, qty, customEquiv);
 
     res.status(200).json({
       success: true,

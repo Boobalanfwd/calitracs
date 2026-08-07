@@ -1,6 +1,19 @@
 import { AnalysisResult, User, DailyTarget, FoodLog, CalendarDay, MealType, NutritionSource } from '../types';
 import { ENDPOINTS, API_BASE_URL } from '../config';
 
+// Module-level auth token set by AuthContext — lets food/analysis endpoints send
+// the bearer token without threading it through every call site.
+let authToken: string | null = null;
+
+export const setAuthToken = (token: string | null): void => {
+  authToken = token;
+};
+
+const withAuth = (headers: Record<string, string> = {}): Record<string, string> => {
+  if (!authToken) return headers;
+  return { ...headers, Authorization: `Bearer ${authToken}` };
+};
+
 // Helper to convert local image URI to Base64 in React Native
 const imageUriToBase64 = async (uri: string): Promise<string> => {
   if (uri.startsWith('data:')) {
@@ -22,12 +35,42 @@ const imageUriToBase64 = async (uri: string): Promise<string> => {
   });
 };
 
+// Slow-endpoint threshold for the timing log (everything logs in __DEV__).
+const SLOW_API_MS = 1500;
+
+// Production helper: fetch with default 15s timeout
+const fetchWithTimeout = async (url: string, options: RequestInit = {}, timeoutMs = 15000): Promise<Response> => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  const startedAt = Date.now();
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    clearTimeout(timeoutId);
+    const durationMs = Date.now() - startedAt;
+    const urlPath = url.replace(API_BASE_URL, '');
+    const label = `[API] ${options.method || 'GET'} ${urlPath} ${durationMs}ms ${response.status}`;
+    if (durationMs > SLOW_API_MS) {
+      console.warn(label);
+    } else if (__DEV__) {
+      console.log(label);
+    }
+    return response;
+  } catch (err: any) {
+    clearTimeout(timeoutId);
+    const durationMs = Date.now() - startedAt;
+    if (durationMs > SLOW_API_MS) {
+      console.warn(`[API] ${options.method || 'GET'} ${url.replace(API_BASE_URL, '')} failed after ${durationMs}ms`);
+    }
+    if (err.name === 'AbortError') {
+      throw new Error('Network request timed out. Please check your internet connection.');
+    }
+    throw err;
+  }
+};
+
 export const API = {
   // ── Food Analysis ───────────────────────────────────────────────────────────
   analyzeFoodImage: async (imageUri: string, base64Raw?: string): Promise<AnalysisResult> => {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 45000); // 45s timeout for AI + nutrition lookup
-
     try {
       let base64Data: string;
       if (base64Raw) {
@@ -54,21 +97,19 @@ export const API = {
       };
       const mimeType = mimeTypeMap[extension] || 'image/jpeg';
 
-      const response = await fetch(ENDPOINTS.analyzeFood, {
+      const response = await fetchWithTimeout(ENDPOINTS.analyzeFood, {
         method: 'POST',
-        headers: {
+        headers: withAuth({
           'Content-Type': 'application/json',
           'Accept': 'application/json',
-        },
+        }),
         body: JSON.stringify({
           imageBase64: base64Data,
           mimeType,
           fileName: `food_photo_${Date.now()}.${extension}`,
         }),
-        signal: controller.signal,
-      });
+      }, 45000); // 45s timeout for AI + nutrition lookup
 
-      clearTimeout(timeoutId);
       const data: AnalysisResult = await response.json();
 
       if (!response.ok) {
@@ -82,10 +123,9 @@ export const API = {
 
       return data;
     } catch (error) {
-      clearTimeout(timeoutId);
       const err = error as Error;
 
-      if (err.name === 'AbortError') {
+      if (err.message.includes('timed out')) {
         return {
           success: false,
           is_food: false,
@@ -114,7 +154,7 @@ export const API = {
 
   // ── Auth ────────────────────────────────────────────────────────────────────
   register: async (name: string, email: string, password: string): Promise<{ token: string; user: User }> => {
-    const res = await fetch(`${API_BASE_URL}/api/auth/register`, {
+    const res = await fetchWithTimeout(`${API_BASE_URL}/api/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, email, password }),
@@ -125,7 +165,7 @@ export const API = {
   },
 
   login: async (email: string, password: string): Promise<{ token: string; user: User }> => {
-    const res = await fetch(`${API_BASE_URL}/api/auth/login`, {
+    const res = await fetchWithTimeout(`${API_BASE_URL}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
@@ -136,7 +176,7 @@ export const API = {
   },
 
   guestLogin: async (): Promise<{ token: string; user: User }> => {
-    const res = await fetch(`${API_BASE_URL}/api/auth/guest`, {
+    const res = await fetchWithTimeout(`${API_BASE_URL}/api/auth/guest`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
     });
@@ -146,16 +186,20 @@ export const API = {
   },
 
   getMe: async (token: string): Promise<User> => {
-    const res = await fetch(`${API_BASE_URL}/api/auth/me`, {
+    const res = await fetchWithTimeout(`${API_BASE_URL}/api/auth/me`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     const data = await res.json();
-    if (!res.ok || !data.success) throw new Error(data.error || 'Failed to fetch user profile');
+    if (!res.ok || !data.success) {
+      const err: any = new Error(data.error || 'Failed to fetch user profile');
+      err.status = res.status;
+      throw err;
+    }
     return data.user;
   },
 
   updateProfile: async (token: string, profileData: any): Promise<{ user: User; suggestedTargets?: DailyTarget }> => {
-    const res = await fetch(`${API_BASE_URL}/api/auth/profile`, {
+    const res = await fetchWithTimeout(`${API_BASE_URL}/api/auth/profile`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -169,7 +213,7 @@ export const API = {
   },
 
   convertGuest: async (token: string, name: string, email: string, password: string): Promise<{ token: string; user: User }> => {
-    const res = await fetch(`${API_BASE_URL}/api/auth/convert-guest`, {
+    const res = await fetchWithTimeout(`${API_BASE_URL}/api/auth/convert-guest`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -184,7 +228,7 @@ export const API = {
 
   // ── Targets ─────────────────────────────────────────────────────────────────
   getTargets: async (token: string): Promise<DailyTarget> => {
-    const res = await fetch(`${API_BASE_URL}/api/targets`, {
+    const res = await fetchWithTimeout(`${API_BASE_URL}/api/targets`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     const data = await res.json();
@@ -193,7 +237,7 @@ export const API = {
   },
 
   updateTargets: async (token: string, targets: DailyTarget): Promise<DailyTarget> => {
-    const res = await fetch(`${API_BASE_URL}/api/targets`, {
+    const res = await fetchWithTimeout(`${API_BASE_URL}/api/targets`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -208,7 +252,7 @@ export const API = {
 
   // ── Food Logs ───────────────────────────────────────────────────────────────
   getLog: async (token: string, date: string): Promise<{ date: string; log: FoodLog; targets: DailyTarget }> => {
-    const res = await fetch(`${API_BASE_URL}/api/logs/${date}`, {
+    const res = await fetchWithTimeout(`${API_BASE_URL}/api/logs/${date}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     const data = await res.json();
@@ -238,7 +282,7 @@ export const API = {
       date?: string;
     }
   ): Promise<{ success: boolean; log: FoodLog; entryId: string }> => {
-    const res = await fetch(`${API_BASE_URL}/api/logs/entry`, {
+    const res = await fetchWithTimeout(`${API_BASE_URL}/api/logs/entry`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -255,7 +299,7 @@ export const API = {
     const url = date
       ? `${API_BASE_URL}/api/logs/entry/${entryId}?date=${date}`
       : `${API_BASE_URL}/api/logs/entry/${entryId}`;
-    const res = await fetch(url, {
+    const res = await fetchWithTimeout(url, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${token}` },
     });
@@ -268,7 +312,7 @@ export const API = {
     token: string,
     params: { amountMl: number; date?: string; mode?: 'add' | 'set' }
   ): Promise<{ success: boolean; log: FoodLog }> => {
-    const res = await fetch(`${API_BASE_URL}/api/logs/water`, {
+    const res = await fetchWithTimeout(`${API_BASE_URL}/api/logs/water`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -285,7 +329,7 @@ export const API = {
     const url = date
       ? `${API_BASE_URL}/api/logs/water/${waterId}?date=${date}`
       : `${API_BASE_URL}/api/logs/water/${waterId}`;
-    const res = await fetch(url, {
+    const res = await fetchWithTimeout(url, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${token}` },
     });
@@ -306,7 +350,7 @@ export const API = {
     const url = startDate
       ? `${API_BASE_URL}/api/logs/water/weekly?startDate=${startDate}`
       : `${API_BASE_URL}/api/logs/water/weekly`;
-    const res = await fetch(url, {
+    const res = await fetchWithTimeout(url, {
       headers: { Authorization: `Bearer ${token}` },
     });
     const data = await res.json();
@@ -315,7 +359,7 @@ export const API = {
   },
 
   getCalendarMonth: async (token: string, year: number, month: number): Promise<{ days: CalendarDay[]; targetCalories: number }> => {
-    const res = await fetch(`${API_BASE_URL}/api/logs/calendar/${year}/${month}`, {
+    const res = await fetchWithTimeout(`${API_BASE_URL}/api/logs/calendar/${year}/${month}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     const data = await res.json();
@@ -325,9 +369,9 @@ export const API = {
 
   // ── Quick Text Lookup (Auto-calculate macros for names + grams/pieces) ─────
   quickTextLookup: async (items: Array<{ name: string; quantity?: string; unit?: string }> | string) => {
-    const res = await fetch(`${API_BASE_URL}/api/food/quick-lookup`, {
+    const res = await fetchWithTimeout(`${API_BASE_URL}/api/food/quick-lookup`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: withAuth({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ items }),
     });
     const data = await res.json();
@@ -337,9 +381,9 @@ export const API = {
 
   // ── Barcode Lookup ────────────────────────────────────────────────────────
   barcodeLookup: async (barcode: string) => {
-    const res = await fetch(`${API_BASE_URL}/api/food/barcode`, {
+    const res = await fetchWithTimeout(`${API_BASE_URL}/api/food/barcode`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: withAuth({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ barcode }),
     });
     const data = await res.json();
@@ -355,11 +399,11 @@ export const API = {
     } else {
       base64Data = await imageUriToBase64(imageUri);
     }
-    const res = await fetch(`${API_BASE_URL}/api/food/analyze-label`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ imageBase64: base64Data, mimeType: 'image/jpeg' }),
-    });
+      const res = await fetchWithTimeout(`${API_BASE_URL}/api/food/analyze-label`, {
+        method: 'POST',
+        headers: withAuth({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ imageBase64: base64Data, mimeType: 'image/jpeg' }),
+      }, 45000);
     const data = await res.json();
     if (!res.ok || !data.success) throw new Error(data.error || 'Failed to read nutrition label');
     return data.item;
@@ -373,11 +417,11 @@ export const API = {
     } else {
       base64Data = await imageUriToBase64(imageUri);
     }
-    const res = await fetch(`${API_BASE_URL}/api/food/detect-names`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ imageBase64: base64Data, mimeType: 'image/jpeg' }),
-    });
+      const res = await fetchWithTimeout(`${API_BASE_URL}/api/food/detect-names`, {
+        method: 'POST',
+        headers: withAuth({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ imageBase64: base64Data, mimeType: 'image/jpeg' }),
+      }, 45000);
     const data = await res.json();
     if (!res.ok || !data.success) throw new Error(data.error || 'Failed to detect food items');
     return data;
@@ -392,11 +436,11 @@ export const API = {
       } else {
         base64Data = await imageUriToBase64(imageUri);
       }
-      const res = await fetch(`${API_BASE_URL}/api/food/upload-image`, {
+      const res = await fetchWithTimeout(`${API_BASE_URL}/api/food/upload-image`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: withAuth({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ imageBase64: base64Data }),
-      });
+      }, 30000);
       const data = await res.json();
       return data.imageUrl || null;
     } catch (e) {
@@ -409,14 +453,14 @@ export const API = {
   uploadProfileImage: async (token: string, imageUri: string): Promise<string | null> => {
     try {
       const base64Data = await imageUriToBase64(imageUri);
-      const res = await fetch(`${API_BASE_URL}/api/auth/avatar`, {
+      const res = await fetchWithTimeout(`${API_BASE_URL}/api/auth/avatar`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ imageBase64: base64Data, mimeType: 'image/jpeg' }),
-      });
+      }, 30000);
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error || 'Upload failed');
       return data.avatarUrl || null;
@@ -433,9 +477,9 @@ export const API = {
     quantity: number,
     customEquivGramsOrMl?: number
   ) => {
-    const res = await fetch(`${API_BASE_URL}/api/food/convert-portion`, {
+    const res = await fetchWithTimeout(`${API_BASE_URL}/api/food/convert-portion`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: withAuth({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ baseNutrition, unit, quantity, customEquivGramsOrMl }),
     });
     const data = await res.json();

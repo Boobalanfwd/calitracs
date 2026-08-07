@@ -51,6 +51,7 @@ const NotificationPreferenceSchema = new Schema<INotificationPreference>(
     timezone: {
       type: String,
       default: 'Asia/Kolkata',
+      maxlength: 64,
     },
   },
   {

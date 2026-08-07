@@ -3,10 +3,24 @@ import mongoose from 'mongoose';
 import { FoodLog, MealType } from '../models/FoodLog';
 import { DailyTarget } from '../models/DailyTarget';
 import { onCaloriesGoalHit } from '../services/notificationOrchestrator';
+import {
+  isValidDateKey,
+  isFiniteNumber,
+  clampNumber,
+  ENTRY_LIMITS,
+  WATER_LIMITS,
+} from '../utils/validation';
 
 function todayDate(): string {
-  return new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+  return new Date().toISOString().split('T')[0]; // YYYY-MM-DD (server-UTC "today")
 }
+
+// Hard cap on per-day entries and water logs — a single FoodLog document must
+// stay well under MongoDB's 16MB document size limit.
+const MAX_ENTRIES_PER_DAY = 200;
+const MAX_WATER_LOGS_PER_DAY = 200;
+
+const VALID_NUTRITION_SOURCES = ['nutritionix', 'openfoodfacts', 'usda', 'gemini_estimate', 'manual'];
 
 // ── Get Log for a Date ────────────────────────────────────────────────────────
 export const getLog = async (req: Request, res: Response): Promise<void> => {
@@ -14,8 +28,8 @@ export const getLog = async (req: Request, res: Response): Promise<void> => {
     const date = req.params.date === 'today' ? todayDate() : req.params.date;
 
     // Validate date format
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      res.status(400).json({ success: false, error: 'Invalid date format. Use YYYY-MM-DD.' });
+    if (!isValidDateKey(date)) {
+      res.status(400).json({ success: false, error: 'Invalid date. Use a real YYYY-MM-DD date.' });
       return;
     }
 
@@ -60,9 +74,105 @@ export const addEntry = async (req: Request, res: Response): Promise<void> => {
 
     const logDate = date || todayDate();
 
-    // Validate required fields
-    if (!name?.trim() || typeof calories !== 'number' || calories < 0) {
-      res.status(400).json({ success: false, error: 'Food name and calories (≥0) are required.' });
+    // Validate required fields — numbers must be finite and within sane bounds.
+    // A plain `typeof x === 'number'` check lets NaN/Infinity slip through.
+    if (typeof name !== 'string' || !name.trim()) {
+      res.status(400).json({ success: false, error: 'Food name is required.' });
+      return;
+    }
+    if (name.trim().length > ENTRY_LIMITS.nameLen) {
+      res.status(400).json({ success: false, error: `Food name must be ${ENTRY_LIMITS.nameLen} characters or fewer.` });
+      return;
+    }
+    if (
+      !isFiniteNumber(calories) ||
+      calories < ENTRY_LIMITS.calories.min ||
+      calories > ENTRY_LIMITS.calories.max
+    ) {
+      res.status(400).json({ success: false, error: `Calories must be a number between ${ENTRY_LIMITS.calories.min} and ${ENTRY_LIMITS.calories.max}.` });
+      return;
+    }
+    const roundMacro = (v: unknown): number | null => {
+      if (v === undefined || v === null) return 0;
+      const n = Number(v);
+      if (!Number.isFinite(n) || n < ENTRY_LIMITS.macroG.min || n > ENTRY_LIMITS.macroG.max) return null;
+      return Math.round(n * 10) / 10;
+    };
+    const proteinGVal = roundMacro(proteinG);
+    const carbsGVal = roundMacro(carbsG);
+    const fatGVal = roundMacro(fatG);
+    if (proteinGVal === null || carbsGVal === null || fatGVal === null) {
+      res.status(400).json({
+        success: false,
+        error: `Protein, carbs, and fat must be numbers between ${ENTRY_LIMITS.macroG.min} and ${ENTRY_LIMITS.macroG.max}.`,
+      });
+      return;
+    }
+    if (
+      weightGramsOrMl !== undefined &&
+      (!isFiniteNumber(weightGramsOrMl) ||
+        weightGramsOrMl < ENTRY_LIMITS.weightGramsOrMl.min ||
+        weightGramsOrMl > ENTRY_LIMITS.weightGramsOrMl.max)
+    ) {
+      res.status(400).json({
+        success: false,
+        error: `Weight must be a number between ${ENTRY_LIMITS.weightGramsOrMl.min} and ${ENTRY_LIMITS.weightGramsOrMl.max} g/ml.`,
+      });
+      return;
+    }
+    if (
+      portionQuantity !== undefined &&
+      (!isFiniteNumber(portionQuantity) ||
+        portionQuantity < ENTRY_LIMITS.portionQuantity.min ||
+        portionQuantity > ENTRY_LIMITS.portionQuantity.max)
+    ) {
+      res.status(400).json({
+        success: false,
+        error: `Portion quantity must be a number between ${ENTRY_LIMITS.portionQuantity.min} and ${ENTRY_LIMITS.portionQuantity.max}.`,
+      });
+      return;
+    }
+    if (
+      portionG !== undefined &&
+      (!isFiniteNumber(portionG) || portionG < ENTRY_LIMITS.portionG.min || portionG > ENTRY_LIMITS.portionG.max)
+    ) {
+      res.status(400).json({
+        success: false,
+        error: `Portion size must be a number between ${ENTRY_LIMITS.portionG.min} and ${ENTRY_LIMITS.portionG.max} g/ml.`,
+      });
+      return;
+    }
+    if (confidence !== undefined && !isFiniteNumber(confidence)) {
+      res.status(400).json({ success: false, error: 'Confidence must be a number.' });
+      return;
+    }
+    if (source !== undefined && source !== 'ai' && source !== 'manual') {
+      res.status(400).json({ success: false, error: 'source must be "ai" or "manual".' });
+      return;
+    }
+    if (
+      nutritionSource !== undefined &&
+      (typeof nutritionSource !== 'string' || !VALID_NUTRITION_SOURCES.includes(nutritionSource))
+    ) {
+      res.status(400).json({ success: false, error: `nutritionSource must be one of: ${VALID_NUTRITION_SOURCES.join(', ')}` });
+      return;
+    }
+    if (
+      portionDescription !== undefined &&
+      (typeof portionDescription !== 'string' || portionDescription.length > ENTRY_LIMITS.portionDescriptionLen)
+    ) {
+      res.status(400).json({ success: false, error: `Portion description must be ${ENTRY_LIMITS.portionDescriptionLen} characters or fewer.` });
+      return;
+    }
+    if (
+      imageUrl !== undefined &&
+      (typeof imageUrl !== 'string' || imageUrl.length > ENTRY_LIMITS.imageUrlLen)
+    ) {
+      res.status(400).json({ success: false, error: `Image URL must be ${ENTRY_LIMITS.imageUrlLen} characters or fewer.` });
+      return;
+    }
+    if (!isValidDateKey(logDate)) {
+      res.status(400).json({ success: false, error: 'Invalid date. Use a real YYYY-MM-DD date.' });
       return;
     }
 
@@ -77,18 +187,20 @@ export const addEntry = async (req: Request, res: Response): Promise<void> => {
       name: name.trim(),
       meal,
       calories: Math.round(calories),
-      proteinG: Math.round((proteinG || 0) * 10) / 10,
-      carbsG: Math.round((carbsG || 0) * 10) / 10,
-      fatG: Math.round((fatG || 0) * 10) / 10,
+      proteinG: proteinGVal,
+      carbsG: carbsGVal,
+      fatG: fatGVal,
       portionUnit: portionUnit || 'g',
-      portionQuantity: typeof portionQuantity === 'number' ? portionQuantity : 1,
-      weightGramsOrMl: typeof weightGramsOrMl === 'number' ? weightGramsOrMl : (portionG || 100),
-      portionG: portionG || weightGramsOrMl || undefined,
+      portionQuantity: isFiniteNumber(portionQuantity) ? portionQuantity : 1,
+      weightGramsOrMl: isFiniteNumber(weightGramsOrMl)
+        ? weightGramsOrMl
+        : (isFiniteNumber(portionG) ? portionG : 100),
+      portionG: isFiniteNumber(portionG) ? portionG : isFiniteNumber(weightGramsOrMl) ? weightGramsOrMl : undefined,
       portionDescription: portionDescription || undefined,
       isLiquid: Boolean(isLiquid),
       source: source || 'manual',
       nutritionSource: nutritionSource || 'manual',
-      confidence: confidence ?? undefined,
+      confidence: isFiniteNumber(confidence) ? clampNumber(confidence, 0, 1) : undefined,
       imageUrl: imageUrl || undefined,
       addedAt: new Date(),
     };
@@ -96,6 +208,10 @@ export const addEntry = async (req: Request, res: Response): Promise<void> => {
     // Upsert: find or create log for this date
     let log = await FoodLog.findOne({ userId: req.user!.userId, date: logDate });
     if (log) {
+      if (log.entries.length >= MAX_ENTRIES_PER_DAY) {
+        res.status(400).json({ success: false, error: `You've hit the daily entry limit (${MAX_ENTRIES_PER_DAY}).` });
+        return;
+      }
       log.entries.push(entry as any);
       await log.save(); // pre-hook recalculates totals
     } else {
@@ -127,6 +243,11 @@ export const deleteEntry = async (req: Request, res: Response): Promise<void> =>
     const { entryId } = req.params;
     const date = req.query.date as string || todayDate();
 
+    if (!isValidDateKey(date)) {
+      res.status(400).json({ success: false, error: 'Invalid date. Use a real YYYY-MM-DD date.' });
+      return;
+    }
+
     const log = await FoodLog.findOne({ userId: req.user!.userId, date });
     if (!log) {
       res.status(404).json({ success: false, error: 'Log not found for this date.' });
@@ -155,7 +276,7 @@ export const getCalendarMonth = async (req: Request, res: Response): Promise<voi
     const y = parseInt(year);
     const m = parseInt(month); // 1-12
 
-    if (isNaN(y) || isNaN(m) || m < 1 || m > 12) {
+    if (isNaN(y) || isNaN(m) || y < 2000 || y > 2100 || m < 1 || m > 12) {
       res.status(400).json({ success: false, error: 'Invalid year or month.' });
       return;
     }
@@ -195,9 +316,27 @@ export const updateWaterIntake = async (req: Request, res: Response): Promise<vo
   try {
     const { date, amountMl, mode } = req.body; // mode: 'add' | 'set'
     const logDate = date || todayDate();
+    const effectiveMode = mode || 'add';
 
-    if (typeof amountMl !== 'number' || isNaN(amountMl) || amountMl < 0) {
-      res.status(400).json({ success: false, error: 'Valid water amount in ml (≥ 0) is required.' });
+    if (!isValidDateKey(logDate)) {
+      res.status(400).json({ success: false, error: 'Invalid date. Use a real YYYY-MM-DD date.' });
+      return;
+    }
+
+    if (effectiveMode !== 'add' && effectiveMode !== 'set') {
+      res.status(400).json({ success: false, error: 'mode must be "add" or "set".' });
+      return;
+    }
+
+    if (
+      !isFiniteNumber(amountMl) ||
+      amountMl < WATER_LIMITS.amountMl.min ||
+      amountMl > WATER_LIMITS.amountMl.max
+    ) {
+      res.status(400).json({
+        success: false,
+        error: `Valid water amount in ml (${WATER_LIMITS.amountMl.min}–${WATER_LIMITS.amountMl.max}) is required.`,
+      });
       return;
     }
 
@@ -213,11 +352,19 @@ export const updateWaterIntake = async (req: Request, res: Response): Promise<vo
       });
     }
 
-    if (mode === 'set') {
-      log.waterIntakeMl = Math.max(0, Math.round(amountMl));
+    if (effectiveMode === 'set') {
+      log.waterIntakeMl = Math.round(amountMl);
       log.waterLogs = amountMl > 0 ? [{ _id: new mongoose.Types.ObjectId(), amountMl: log.waterIntakeMl, addedAt: new Date() } as any] : [];
     } else {
       // Default: 'add'
+      if (amountMl < 1) {
+        res.status(400).json({ success: false, error: 'Water amount must be at least 1 ml.' });
+        return;
+      }
+      if (log.waterLogs.length >= MAX_WATER_LOGS_PER_DAY) {
+        res.status(400).json({ success: false, error: `You've hit the daily water entry limit (${MAX_WATER_LOGS_PER_DAY}).` });
+        return;
+      }
       const newEntry = {
         _id: new mongoose.Types.ObjectId(),
         amountMl: Math.round(amountMl),
@@ -239,6 +386,11 @@ export const deleteWaterEntry = async (req: Request, res: Response): Promise<voi
   try {
     const { waterId } = req.params;
     const date = (req.query.date as string) || todayDate();
+
+    if (!isValidDateKey(date)) {
+      res.status(400).json({ success: false, error: 'Invalid date. Use a real YYYY-MM-DD date.' });
+      return;
+    }
 
     const log = await FoodLog.findOne({ userId: req.user!.userId, date });
     if (!log) {
@@ -272,8 +424,12 @@ export const getWeeklyWater = async (req: Request, res: Response): Promise<void>
 
     // Build 7-day range
     let start: Date;
-    if (startDate && typeof startDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
-      start = new Date(startDate);
+    if (startDate !== undefined) {
+      if (typeof startDate !== 'string' || !isValidDateKey(startDate)) {
+        res.status(400).json({ success: false, error: 'Invalid startDate. Use a real YYYY-MM-DD date.' });
+        return;
+      }
+      start = new Date(`${startDate}T00:00:00Z`);
     } else {
       // Default: current Monday
       const now = new Date();

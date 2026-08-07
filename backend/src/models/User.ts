@@ -44,6 +44,7 @@ export interface IUser extends Document {
   email: string;
   passwordHash: string;
   isGuest: boolean;
+  tokenVersion: number;
   profile: IUserProfile;
   onboardingComplete: boolean;
   createdAt: Date;
@@ -70,14 +71,17 @@ const UserProfileSchema = new Schema<IUserProfile>(
     goals: [{ type: String, enum: GOAL_VALUES }],
     gender: { type: String, enum: ['male', 'female', 'other'] },
     unitSystem: { type: String, enum: ['metric', 'imperial'], default: 'metric' },
-    streakDays: { type: Number, default: 1 },
+    streakDays: { type: Number, default: 1, min: 0, max: 36500 },
     weightHistory: [
       {
-        weightKg: { type: Number },
-        date: { type: String },
+        weightKg: { type: Number, min: 1, max: 500 },
+        date: {
+          type: String,
+          match: /^\d{4}-\d{2}-\d{2}$/,
+        },
       },
     ],
-    avatarUrl: { type: String },
+    avatarUrl: { type: String, maxlength: 500 },
   },
   { _id: false }
 );
@@ -96,6 +100,7 @@ const UserSchema = new Schema<IUser>(
     },
     passwordHash: { type: String, required: true },
     isGuest: { type: Boolean, default: false },
+    tokenVersion: { type: Number, default: 0 },
     profile: { type: UserProfileSchema, default: () => ({ unitSystem: 'metric' }) },
     onboardingComplete: { type: Boolean, default: false },
   },

@@ -1,6 +1,7 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { todayDateKey } from '../utils/dates';
 
 // Storage keys for smart notification throttling & gap tracking
 const STORAGE_KEYS = {
@@ -181,7 +182,7 @@ class NotificationService {
       targetFatG,
     } = params;
 
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = todayDateKey();
     const currentHour = new Date().getHours();
 
     // 1. Calorie Goal / Limit Alert — Sent at most ONCE per day when crossing target
@@ -258,7 +259,7 @@ class NotificationService {
    */
   async recordWaterLogged(loggedWaterMl: number, targetWaterMl: number = 2000) {
     const now = Date.now();
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = todayDateKey();
 
     try {
       // 1. Update last water log timestamp

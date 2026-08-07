@@ -11,6 +11,7 @@ import { RootStackParamList, MealType, MEAL_CONFIG, PortionUnit } from '../types
 import { useTheme } from '../contexts/ThemeContext';
 import { useLog } from '../contexts/LogContext';
 import { API } from '../services/api';
+import { todayDateKey } from '../utils/dates';
 
 type ResultNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Result'>;
 type ResultRouteProp = RouteProp<RootStackParamList, 'Result'>;
@@ -210,7 +211,7 @@ const ResultScreen: React.FC<Props> = ({ navigation, route }) => {
           source: 'ai',
           nutritionSource: (item.nutritionSource as any) || 'gemini_estimate',
           imageUrl: cdnUrl || undefined,
-          date: new Date().toISOString().split('T')[0],
+          date: todayDateKey(),
         });
       }
 

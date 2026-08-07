@@ -22,6 +22,7 @@ const DeviceTokenSchema = new Schema<IDeviceToken>(
       required: true,
       unique: true,
       trim: true,
+      maxlength: 200,
     },
     platform: {
       type: String,

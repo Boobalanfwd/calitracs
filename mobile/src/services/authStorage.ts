@@ -7,8 +7,10 @@ const USER_KEY = 'foodlens_user';
 export const saveToken = async (token: string): Promise<void> => {
   try {
     await SecureStore.setItemAsync(TOKEN_KEY, token);
-  } catch {
-    // SecureStore may fail on emulators; fall back to AsyncStorage
+  } catch (e) {
+    // SecureStore may fail on emulators/dev builds. Falling back to plaintext
+    // AsyncStorage weakens protection — warn loudly so it's not silent.
+    console.warn('[authStorage] SecureStore unavailable — storing token in plaintext AsyncStorage (dev fallback).', e);
     await AsyncStorage.setItem(TOKEN_KEY, token);
   }
 };
