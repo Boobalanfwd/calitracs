@@ -290,20 +290,26 @@ export const getCalendarMonth = async (req: Request, res: Response): Promise<voi
       FoodLog.find({
         userId: req.user!.userId,
         date: { $gte: startDate, $lte: endDate },
-      }).select('date totalCalories totalProteinG totalCarbsG totalFatG'),
+      }).select('date totalCalories totalProteinG totalCarbsG totalFatG entries'),
       DailyTarget.findOne({ userId: req.user!.userId }),
     ]);
 
     const targetCalories = target?.calories ?? 2000;
-    const days = logs.map((log) => ({
-      date: log.date,
-      totalCalories: log.totalCalories,
-      totalProteinG: log.totalProteinG,
-      totalCarbsG: log.totalCarbsG,
-      totalFatG: log.totalFatG,
-      targetCalories,
-      percentage: Math.round((log.totalCalories / targetCalories) * 100),
-    }));
+    const days = logs.map((log) => {
+      let cal = log.totalCalories || 0;
+      if (cal === 0 && log.entries && log.entries.length > 0) {
+        cal = log.entries.reduce((sum, e) => sum + (e.calories || 0), 0);
+      }
+      return {
+        date: log.date,
+        totalCalories: cal,
+        totalProteinG: log.totalProteinG || 0,
+        totalCarbsG: log.totalCarbsG || 0,
+        totalFatG: log.totalFatG || 0,
+        targetCalories,
+        percentage: Math.round((cal / targetCalories) * 100),
+      };
+    });
 
     res.json({ success: true, year: y, month: m, targetCalories, days });
   } catch {

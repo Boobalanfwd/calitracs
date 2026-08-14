@@ -62,7 +62,7 @@ const ProgressScreen: React.FC = () => {
   // Calculate BMI (weight in kg / (height in meters)^2)
   const heightM = currentHeight / 100;
   const rawBmi = heightM > 0 ? currentWeight / (heightM * heightM) : 25.4;
-  const bmi = Math.round(rawBmi * 10) / 10;
+  const bmi = Math.round(rawBmi * 10) / 10; // 1 decimal precision
 
   // Determine BMI Status category & color scheme
   let bmiCategory = 'Normal';
@@ -222,7 +222,7 @@ const ProgressScreen: React.FC = () => {
     } catch (err) {
       console.warn('[ProgressScreen] Failed to load weekly database progress:', err);
     } finally {
-      setIsSaving(false);
+      // NOTE: setIsSaving belongs to the weight modal — do NOT call it here.
       setLoading(false);
     }
   }, [token, todayLog, selectedPeriod]);
@@ -296,7 +296,7 @@ const ProgressScreen: React.FC = () => {
 
           {/* BMI Value Large Row */}
           <View style={styles.bmiValRow}>
-            <Text style={styles.bmiBigNum}>{Math.round(bmi)}</Text>
+            <Text style={styles.bmiBigNum}>{bmi.toFixed(1)}</Text>
             <Text style={styles.bmiUnitLabel}>BMI</Text>
           </View>
 
@@ -452,8 +452,33 @@ const ProgressScreen: React.FC = () => {
             </View>
           </View>
 
+          {/* Macro Legend */}
+          <View style={styles.macroLegendRow}>
+            <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: '#3B82F6' }]} /><Text style={styles.legendLabel}>Protein</Text></View>
+            <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: '#10B981' }]} /><Text style={styles.legendLabel}>Carbs</Text></View>
+            <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: '#F59E0B' }]} /><Text style={styles.legendLabel}>Fat</Text></View>
+          </View>
+
           {/* Exact Multi-Color Stacked Macro Bar Chart */}
           <View style={styles.stackedChartContainer}>
+            {/* Calorie target dashed line */}
+            {(() => {
+              if (!targets?.calories || maxBarKcal === 0) return null;
+              const targetLinePct = Math.min(95, Math.max(5, (targets.calories / maxBarKcal) * 100));
+              return (
+                <View
+                  pointerEvents="none"
+                  style={[
+                    styles.targetLine,
+                    { bottom: `${targetLinePct}%` as any },
+                  ]}
+                >
+                  <View style={styles.targetLineDash} />
+                  <Text style={styles.targetLineLabel}>{targets.calories} kcal</Text>
+                </View>
+              );
+            })()}
+
             <View style={styles.stackedBarsRow}>
               {weeklyData.map((item, idx) => {
                 const totalKcal = Math.max(1, item.kcal);
@@ -504,13 +529,92 @@ const ProgressScreen: React.FC = () => {
                     </View>
 
                     {/* Day Name */}
-                    <Text style={styles.stackedDayText}>{item.day}</Text>
+                    <Text style={[styles.stackedDayText, item.isToday && { color: '#FF6B00', fontFamily: FONTS.heading.bold }]}>{item.day}</Text>
                   </View>
                 );
               })}
             </View>
           </View>
         </Surface>
+
+        {/* ── GOAL ADHERENCE CARD ── */}
+        {weeklyData.length > 0 && targets && (() => {
+          const calTarget = targets.calories || 2000;
+          const proteinTarget = targets.proteinG || 150;
+          const carbsTarget = targets.carbsG || 225;
+          const fatTarget = targets.fatG || 65;
+
+          // Per-day accuracy: min(actual/target, target/actual) — penalises both over and under
+          const daysWithData = weeklyData.filter((d) => d.kcal > 0);
+          const avgAccuracy = daysWithData.length === 0 ? 0 : Math.round(
+            daysWithData.reduce((sum, d) => {
+              const ratio = d.kcal / calTarget;
+              return sum + Math.min(ratio, 1 / ratio) * 100;
+            }, 0) / daysWithData.length
+          );
+
+          // Per-macro totals for the week
+          const totalProteinG = Math.round(weeklyData.reduce((s, d) => s + d.proteinKcal / 4, 0));
+          const totalCarbsG = Math.round(weeklyData.reduce((s, d) => s + d.carbsKcal / 4, 0));
+          const totalFatG = Math.round(weeklyData.reduce((s, d) => s + d.fatKcal / 9, 0));
+          const weeklyProteinTarget = proteinTarget * 7;
+          const weeklyCarbsTarget = carbsTarget * 7;
+          const weeklyFatTarget = fatTarget * 7;
+
+          const adherenceColor = avgAccuracy >= 80 ? '#22C55E' : avgAccuracy >= 60 ? '#F59E0B' : '#EF4444';
+          const adherenceBg = avgAccuracy >= 80 ? '#F0FDF4' : avgAccuracy >= 60 ? '#FFFBEB' : '#FEF2F2';
+          const adherenceLabel = avgAccuracy >= 80 ? 'On Track 🎯' : avgAccuracy >= 60 ? 'Moderate' : 'Needs Work';
+
+          return (
+            <Surface style={styles.cardContainer} elevation={1}>
+              {/* Header */}
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <View>
+                  <Text style={{ fontSize: 15, fontFamily: FONTS.heading.bold, color: '#0F172A' }}>Goal Adherence</Text>
+                  <Text style={{ fontSize: 11, color: '#64748B', fontFamily: FONTS.body.regular, marginTop: 2 }}>
+                    How well you hit your targets this week
+                  </Text>
+                </View>
+                <View style={{ backgroundColor: adherenceBg, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 6 }}>
+                  <Text style={{ fontSize: 13, fontFamily: FONTS.heading.bold, color: adherenceColor }}>
+                    {adherenceLabel}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Big accuracy % */}
+              <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 4 }}>
+                <Text style={{ fontSize: 42, fontFamily: FONTS.heading.bold, color: adherenceColor }}>{daysWithData.length > 0 ? avgAccuracy : '—'}</Text>
+                {daysWithData.length > 0 && <Text style={{ fontSize: 18, fontFamily: FONTS.heading.bold, color: '#64748B' }}>%</Text>}
+                <Text style={{ fontSize: 12, color: '#94A3B8', fontFamily: FONTS.body.regular, marginLeft: 4 }}>
+                  avg. daily accuracy ({daysWithData.length} days logged)
+                </Text>
+              </View>
+
+              {/* Per-macro progress bars */}
+              {[
+                { label: 'Protein', actual: totalProteinG, target: weeklyProteinTarget, color: '#3B82F6', unit: 'g' },
+                { label: 'Carbs', actual: totalCarbsG, target: weeklyCarbsTarget, color: '#10B981', unit: 'g' },
+                { label: 'Fat', actual: totalFatG, target: weeklyFatTarget, color: '#F59E0B', unit: 'g' },
+              ].map(({ label, actual, target: t, color, unit }) => {
+                const pct = t > 0 ? Math.min(1, actual / t) : 0;
+                return (
+                  <View key={label} style={{ gap: 5 }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                      <Text style={{ fontSize: 12, fontFamily: FONTS.heading.bold, color: '#334155' }}>{label}</Text>
+                      <Text style={{ fontSize: 12, fontFamily: FONTS.body.regular, color: '#64748B' }}>
+                        {actual}{unit} / {t}{unit}
+                      </Text>
+                    </View>
+                    <View style={{ height: 6, backgroundColor: '#F1F5F9', borderRadius: 3, overflow: 'hidden' }}>
+                      <View style={{ height: '100%', width: `${Math.round(pct * 100)}%` as any, backgroundColor: color, borderRadius: 3 }} />
+                    </View>
+                  </View>
+                );
+              })}
+            </Surface>
+          );
+        })()}
 
         {/* ── SECTION 3: WEEKLY WATER INTAKE CHART ── */}
         {waterData.length > 0 && (() => {
@@ -729,8 +833,36 @@ const styles = StyleSheet.create({
   statBigNum: { fontSize: 26, color: '#0F172A', fontFamily: FONTS.heading.bold },
   statSubLabel: { fontSize: 12, color: '#64748B', fontFamily: FONTS.body.regular, marginTop: 2 },
 
+  // Macro legend
+  macroLegendRow: { flexDirection: 'row', gap: 16, marginBottom: 4 },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  legendDot: { width: 8, height: 8, borderRadius: 4 },
+  legendLabel: { fontSize: 11, color: '#64748B', fontFamily: FONTS.body.regular },
+
   // Multi-color Stacked Bar Chart
-  stackedChartContainer: { height: 160, marginTop: 16 },
+  stackedChartContainer: { height: 160, marginTop: 4, position: 'relative' },
+  targetLine: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    zIndex: 10,
+  },
+  targetLineDash: {
+    flex: 1,
+    height: 1,
+    borderStyle: 'dashed',
+    borderWidth: 1,
+    borderColor: '#FF6B00',
+    opacity: 0.6,
+  },
+  targetLineLabel: {
+    fontSize: 9,
+    color: '#FF6B00',
+    fontFamily: FONTS.heading.bold,
+  },
   stackedBarsRow: { flex: 1, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' },
   stackedBarCol: { flex: 1, height: '100%', alignItems: 'center', justifyContent: 'flex-end', gap: 8 },
   stackedBarTrack: { width: 14, borderRadius: 6, overflow: 'hidden', backgroundColor: '#F1F5F9' },

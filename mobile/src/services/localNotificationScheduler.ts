@@ -18,6 +18,7 @@ export interface LocalReminderPrefs {
   checkInEnabled: boolean;
   checkInHour: number;
   checkInMinute: number;
+  snoozeMinutes: number; // 5 | 10 | 15 | 30
 }
 
 export const DEFAULT_PREFS: LocalReminderPrefs = {
@@ -35,6 +36,7 @@ export const DEFAULT_PREFS: LocalReminderPrefs = {
   checkInEnabled: true,
   checkInHour: 21,
   checkInMinute: 0,
+  snoozeMinutes: 10,
 };
 
 const PREF_KEY = `${STORAGE_PREFIX}schedule`;

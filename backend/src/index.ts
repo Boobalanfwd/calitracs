@@ -64,7 +64,7 @@ const registerLimiter = rateLimit({
 });
 const guestLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
-  limit: 5,
+  limit: process.env.NODE_ENV === 'production' ? 5 : 50, // relaxed in dev for testing
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   message: { success: false, error: 'Too many guest sessions from this device. Please try again later.' },

@@ -120,7 +120,7 @@ const AppNavigatorContent: React.FC = () => {
 
   // Determine if the authenticated user still needs to complete onboarding
   const needsOnboarding =
-    isAuthenticated && user && !user.onboardingComplete && !user.isGuest;
+    isAuthenticated && user && !user.onboardingComplete;
 
   return (
     <PaperProvider theme={lightPaperTheme}>

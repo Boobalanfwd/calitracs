@@ -19,6 +19,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { CalendarDay, FoodLog, MEAL_CONFIG } from '../../types';
 import { API } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
+import { useLog } from '../../contexts/LogContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { FONTS } from '../../theme/fonts';
 import { ScreenLoader, SkeletonTransition } from '../../components/ui';
@@ -56,6 +57,7 @@ const formatFloat = (val: number): string => {
 
 const CalendarScreen: React.FC<Props> = ({ navigation }) => {
   const { token, targets: userTargets } = useAuth();
+  const { todayLog } = useLog();
   const { theme } = useTheme();
   const now = useMemo(() => new Date(), []);
   const [year, setYear] = useState(now.getFullYear());
@@ -239,9 +241,41 @@ const CalendarScreen: React.FC<Props> = ({ navigation }) => {
           {/* Calendar Day Grid */}
           <View style={styles.gridContainer}>
             {gridCells.map((cell) => {
-              const dayData = daysByDate.get(cell.dateStr);
+              let dayData = daysByDate.get(cell.dateStr);
               const isSelected = cell.dateStr === selectedDateStr;
               const isToday = cell.dateStr === formatDateKey(now);
+
+              // Merge todayLog if dayData is missing/0
+              if (isToday && todayLog && (todayLog.totalCalories > 0 || (todayLog.entries && todayLog.entries.length > 0))) {
+                const cal = todayLog.totalCalories || todayLog.entries.reduce((sum, e) => sum + (e.calories || 0), 0);
+                if (cal > 0) {
+                  dayData = {
+                    date: cell.dateStr,
+                    totalCalories: cal,
+                    totalProteinG: todayLog.totalProteinG || 0,
+                    totalCarbsG: todayLog.totalCarbsG || 0,
+                    totalFatG: todayLog.totalFatG || 0,
+                    targetCalories: userTargets?.calories ?? 2200,
+                    percentage: Math.round((cal / (userTargets?.calories ?? 2200)) * 100),
+                  };
+                }
+              }
+
+              // Merge selectedLog if loaded and has entries/calories
+              if (isSelected && selectedLog && (selectedLog.totalCalories > 0 || (selectedLog.entries && selectedLog.entries.length > 0))) {
+                const cal = selectedLog.totalCalories || selectedLog.entries.reduce((sum, e) => sum + (e.calories || 0), 0);
+                if (cal > 0) {
+                  dayData = {
+                    date: cell.dateStr,
+                    totalCalories: cal,
+                    totalProteinG: selectedLog.totalProteinG || 0,
+                    totalCarbsG: selectedLog.totalCarbsG || 0,
+                    totalFatG: selectedLog.totalFatG || 0,
+                    targetCalories: userTargets?.calories ?? 2200,
+                    percentage: Math.round((cal / (userTargets?.calories ?? 2200)) * 100),
+                  };
+                }
+              }
 
               const consumed = dayData?.totalCalories ?? 0;
               const target = dayData?.targetCalories ?? userTargets?.calories ?? 2200;

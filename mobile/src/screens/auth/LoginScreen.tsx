@@ -41,9 +41,9 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
     setGuestLoading(true);
     try {
       await loginAsGuest();
-      (navigation as any).replace('Main');
+      // AppNavigator automatically routes to Onboarding when onboardingComplete = false
     } catch (err: any) {
-      Alert.alert('Error', 'Failed to start guest session. Please try again.');
+      Alert.alert('Guest Session Failed', err.message || 'Failed to start guest session. Please try again.');
     } finally {
       setGuestLoading(false);
     }

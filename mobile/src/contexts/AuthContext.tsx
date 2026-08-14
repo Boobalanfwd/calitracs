@@ -96,7 +96,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const loginAsGuest = useCallback(async () => {
     const data = await API.guestLogin();
-    await handleAuthResponse(data);
+    // Patch BEFORE handleAuthResponse so the very first user state set has
+    // onboardingComplete = false — prevents the navigator from flashing Main.
+    const guestData = { ...data, user: { ...data.user, onboardingComplete: false } };
+    await handleAuthResponse(guestData);
   }, [handleAuthResponse]);
 
   const logout = useCallback(async () => {

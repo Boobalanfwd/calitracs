@@ -43,7 +43,7 @@ const GOAL_LABELS: Record<Goal, string> = {
 };
 
 const OnboardingPlanScreen: React.FC<Props> = ({ navigation, route }) => {
-  const { targets, name, goals } = route.params;
+  const { targets, name } = route.params;
 
   // ── All hooks declared at the top (Rules of Hooks) ───────────────────────
   const { updateProfile } = useAuth();
@@ -203,15 +203,6 @@ const OnboardingPlanScreen: React.FC<Props> = ({ navigation, route }) => {
             <Text style={styles.resultsSubtitle}>
               Based on your goals and body metrics, here's what{'\n'}our AI nutritionist recommends
             </Text>
-          </View>
-
-          {/* Goals tag row */}
-          <View style={styles.goalTags}>
-            {goals.slice(0, 3).map((g) => (
-              <View key={g} style={styles.goalTag}>
-                <Text style={styles.goalTagText}>{GOAL_LABELS[g] ?? g}</Text>
-              </View>
-            ))}
           </View>
 
           {/* Big calorie card */}
@@ -412,27 +403,6 @@ const styles = StyleSheet.create({
     color: '#64748B',
     textAlign: 'center',
     lineHeight: 21,
-  },
-
-  // Goal tags
-  goalTags: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    justifyContent: 'center',
-  },
-  goalTag: {
-    backgroundColor: ORANGE_LIGHT,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 100,
-    borderWidth: 1,
-    borderColor: '#FFD5C2',
-  },
-  goalTagText: {
-    fontSize: 13,
-    fontFamily: FONTS.body.medium,
-    color: ORANGE,
   },
 
   // Big calorie card

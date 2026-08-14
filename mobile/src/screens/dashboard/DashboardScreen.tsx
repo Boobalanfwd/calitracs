@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View, Text, StyleSheet, StatusBar,
-  ScrollView, TouchableOpacity, RefreshControl, Image, Alert,
+  ScrollView, TouchableOpacity, RefreshControl, Image, Alert, Animated,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Surface, Portal, Dialog, Button } from 'react-native-paper';
 import { useAuth } from '../../contexts/AuthContext';
@@ -10,7 +11,7 @@ import { useLog } from '../../contexts/LogContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { MealType, FoodEntry, MEAL_CONFIG, DailyTarget } from '../../types';
 import { FONTS } from '../../theme/fonts';
-import { Plus, Bell, ChevronRight, Camera, Edit3, Trash2, Soup, Egg, Pizza, Flame, Beef, Leaf, Droplet } from 'lucide-react-native';
+import { Plus, Bell, ChevronRight, Camera, Edit3, Trash2, Soup, Egg, Pizza, Flame, Beef, Leaf, Droplet, X, Settings } from 'lucide-react-native';
 import Svg, { Circle } from 'react-native-svg';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
@@ -90,6 +91,37 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
 
   const [showNotificationModal, setShowNotificationModal] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+
+  // ── Dynamic greeting by time of day ───────────────────────────────────────
+  const greetingSubtitle = useMemo(() => {
+    const hour = new Date().getHours();
+    if (hour >= 5 && hour < 11) return "Good morning! Let's start strong. 🌅";
+    if (hour >= 11 && hour < 14) return "Good afternoon! Don't forget lunch. ☀️";
+    if (hour >= 14 && hour < 18) return 'Keep it up — afternoon fueling time. 🍎';
+    if (hour >= 18 && hour < 22) return 'Good evening! Log your dinner. 🌙';
+    return 'Late night? Track before you sleep. 🌜';
+  }, []);
+
+  // ── Info banner: shown once until dismissed ──────────────────────────────
+  const BANNER_KEY = 'dashboard_target_banner_dismissed';
+  const [showTargetBanner, setShowTargetBanner] = useState(false);
+  const bannerOpacity = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    AsyncStorage.getItem(BANNER_KEY).then((val) => {
+      if (val !== 'true') {
+        setShowTargetBanner(true);
+        Animated.timing(bannerOpacity, { toValue: 1, duration: 400, useNativeDriver: true }).start();
+      }
+    });
+  }, []);
+
+  const dismissBanner = () => {
+    Animated.timing(bannerOpacity, { toValue: 0, duration: 250, useNativeDriver: true }).start(() => {
+      setShowTargetBanner(false);
+      AsyncStorage.setItem(BANNER_KEY, 'true');
+    });
+  };
 
   useEffect(() => {
     setUnreadCount(notificationService.getUnreadCount());
@@ -232,7 +264,7 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
       >
         {/* Header Bar (Matches Image: Avatar + Hello, Ghea! + Bell Icon) */}
         <View style={styles.header}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12, marginRight: 8 }}>
             <TouchableOpacity onPress={() => (navigation as any).navigate('Profile')} activeOpacity={0.8}>
               {user?.profile?.avatarUrl ? (
                 <Image source={{ uri: getResizedCloudinaryUrl(user.profile.avatarUrl, 88) || undefined }} style={styles.avatarCircle} />
@@ -242,26 +274,61 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
                 </View>
               )}
             </TouchableOpacity>
-            <View>
-              <Text style={styles.greetingTitle}>
+            <View style={{ flex: 1, gap: 1 }}>
+              <Text style={styles.greetingTitle} numberOfLines={1}>
                 Hello, {user?.name?.split(' ')[0] || 'User'}!
               </Text>
-              <Text style={styles.greetingSub}>Start tracking your meals!</Text>
+              <Text style={styles.greetingSub} numberOfLines={1}>{greetingSubtitle}</Text>
             </View>
           </View>
 
-          <TouchableOpacity
-            style={styles.bellBtn}
-            onPress={() => {
-              setShowNotificationModal(true);
-              notificationService.markAllAsRead();
-            }}
-            activeOpacity={0.8}
-          >
-            <Bell size={20} color="#64748B" />
-            {unreadCount > 0 && <View style={styles.unreadBadgeDot} />}
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+            {/* Streak badge */}
+            {(user?.profile?.streakDays ?? 0) > 0 && (
+              <View style={styles.streakPill}>
+                <Flame size={12} color="#FF6B00" />
+                <Text style={styles.streakPillText}>{user!.profile!.streakDays}🔥</Text>
+              </View>
+            )}
+            <TouchableOpacity
+              style={styles.bellBtn}
+              onPress={() => {
+                setShowNotificationModal(true);
+                notificationService.markAllAsRead();
+              }}
+              activeOpacity={0.8}
+            >
+              <Bell size={20} color="#64748B" />
+              {unreadCount > 0 && <View style={styles.unreadBadgeDot} />}
+            </TouchableOpacity>
+          </View>
         </View>
+
+        {/* ── Calorie target info banner ─────────────────────────────── */}
+        {showTargetBanner && (
+          <Animated.View style={[styles.infoBanner, { opacity: bannerOpacity }]}>
+            <View style={styles.infoBannerLeft}>
+              <View style={styles.infoBannerIcon}>
+                <Settings size={16} color="#FF6B2C" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.infoBannerTitle}>Your calorie target is set!</Text>
+                <Text style={styles.infoBannerBody}>
+                  It stays fixed until you change it. Edit anytime in{' '}
+                  <Text
+                    style={styles.infoBannerLink}
+                    onPress={() => { dismissBanner(); (navigation as any).navigate('Profile'); }}
+                  >
+                    Profile → Edit Goals
+                  </Text>
+                </Text>
+              </View>
+            </View>
+            <TouchableOpacity onPress={dismissBanner} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <X size={16} color="#94A3B8" />
+            </TouchableOpacity>
+          </Animated.View>
+        )}
 
         {/* Date Selector Strip */}
         <ScrollView
@@ -295,7 +362,7 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
           })}
         </ScrollView>
 
-        {/* 🏆 Hero Calorie Card (Matching Screenshot 1) */}
+        {/* 🏆 Hero Calorie Card */}
         <Surface style={styles.heroSummaryCard}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 8 }}>
             {/* Left Stat Column */}
@@ -304,7 +371,11 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
                 {isOverTarget ? 'Calories over target' : isTargetReached ? 'Daily target reached 🎉' : 'Calories left'}
               </Text>
               <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6 }}>
-                <Text style={styles.bannerLargeNum}>
+                <Text style={[
+                  styles.bannerLargeNum,
+                  isTargetReached && !isOverTarget && { color: '#16A34A' },
+                  isOverTarget && { color: '#FF3B30' },
+                ]}>
                   {isOverTarget
                     ? overCalories.toLocaleString()
                     : isZeroLogged
@@ -313,14 +384,18 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
                 </Text>
                 <Text style={styles.bannerUnitText}>Kcal</Text>
               </View>
+              {/* Consumed / Target secondary line */}
+              <Text style={styles.consumedLabel}>
+                {consumed.toLocaleString()} / {targetCal.toLocaleString()} kcal consumed
+              </Text>
             </View>
 
-            {/* Right Circular Progress Ring Gauge with Black Flame Icon */}
+            {/* Right Circular Progress Ring — green when target reached, red when over */}
             <CircularProgressRing
               size={92}
               strokeWidth={7}
               progress={targetPct / 100}
-              color={isOverTarget ? '#FF3B30' : '#3B82F6'}
+              color={isOverTarget ? '#FF3B30' : isTargetReached ? '#22C55E' : '#3B82F6'}
               trackColor="#F1F5F9"
             >
               <Flame size={32} color="#0F172A" fill="#0F172A" />
@@ -658,6 +733,53 @@ const DashboardScreen: React.FC<Props> = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   scrollContent: { paddingHorizontal: 16, paddingTop: 12, gap: 14 },
+  // \u2500\u2500 Info banner
+  infoBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#FFF8F5',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#FFD5C2',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 10,
+    marginBottom: 4,
+  },
+  infoBannerLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  infoBannerIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: '#FFE8DA',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  infoBannerTitle: {
+    fontSize: 13,
+    fontFamily: FONTS.heading.semiBold,
+    color: '#1A1D2E',
+    marginBottom: 2,
+  },
+  infoBannerBody: {
+    fontSize: 12,
+    fontFamily: FONTS.body.regular,
+    color: '#64748B',
+    lineHeight: 18,
+  },
+  infoBannerLink: {
+    fontSize: 12,
+    fontFamily: FONTS.body.bold,
+    color: '#FF6B2C',
+    textDecorationLine: 'underline',
+  },
+
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   avatarCircle: {
     width: 44,
@@ -747,6 +869,29 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#64748B',
     fontFamily: FONTS.heading.medium,
+  },
+  consumedLabel: {
+    fontSize: 12,
+    color: '#94A3B8',
+    fontFamily: FONTS.body.regular,
+    marginTop: 2,
+  },
+  // Streak pill in header
+  streakPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FFF5EF',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#FFD8BF',
+  },
+  streakPillText: {
+    fontSize: 12,
+    fontFamily: FONTS.heading.bold,
+    color: '#FF6B00',
   },
 
   macroCardsRow: { flexDirection: 'row', gap: 8, width: '100%' },

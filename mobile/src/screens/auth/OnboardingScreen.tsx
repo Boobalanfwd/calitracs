@@ -12,7 +12,7 @@ import { FONTS } from '../../theme/fonts';
 
 type Props = { navigation: NativeStackNavigationProp<RootStackParamList> };
 
-const TOTAL_STEPS = 8;
+const TOTAL_STEPS = 9;
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 // ── Goal Options ──────────────────────────────────────────────────────────────
@@ -37,7 +37,7 @@ const ACTIVITY_OPTIONS: { value: ActivityLevel; label: string; emoji: string; de
   { value: 'very_active', label: 'Athlete mode',   emoji: '🏋️', desc: 'Intense daily training' },
 ];
 
-// ── Scroll Picker ─────────────────────────────────────────────────────────────
+// ── Scroll Picker (vertical) ──────────────────────────────────────────────────
 interface ScrollPickerProps {
   values: number[];
   selectedValue: number;
@@ -46,7 +46,7 @@ interface ScrollPickerProps {
 }
 
 const ScrollPicker: React.FC<ScrollPickerProps> = ({
-  values, selectedValue, onValueChange, itemHeight = 56,
+  values, selectedValue, onValueChange, itemHeight = 60,
 }) => {
   const scrollRef = useRef<ScrollView>(null);
   const VISIBLE_ITEMS = 5;
@@ -64,7 +64,7 @@ const ScrollPicker: React.FC<ScrollPickerProps> = ({
     if (idx >= 0 && scrollRef.current) {
       setTimeout(() => {
         scrollRef.current?.scrollTo({ y: idx * itemHeight, animated: false });
-      }, 50);
+      }, 80);
     }
   }, []);
 
@@ -81,12 +81,12 @@ const ScrollPicker: React.FC<ScrollPickerProps> = ({
   );
 
   return (
-    <View style={{ height: itemHeight * VISIBLE_ITEMS, overflow: 'hidden' }}>
+    <View style={{ height: itemHeight * VISIBLE_ITEMS, overflow: 'hidden', position: 'relative' }}>
       <ScrollView
         ref={scrollRef}
         showsVerticalScrollIndicator={false}
         snapToInterval={itemHeight}
-        decelerationRate="fast"
+        decelerationRate={0.92}
         onMomentumScrollEnd={handleScroll}
         onScrollEndDrag={handleScroll}
         nestedScrollEnabled={true}
@@ -97,13 +97,9 @@ const ScrollPicker: React.FC<ScrollPickerProps> = ({
           return (
             <TouchableOpacity
               key={item}
-              style={[
-                styles.pickerItem,
-                { height: itemHeight },
-                isSelected && styles.pickerItemSelected,
-              ]}
+              style={[styles.pickerItem, { height: itemHeight }]}
               onPress={() => { onValueChange(item); scrollToValue(item); }}
-              activeOpacity={0.8}
+              activeOpacity={0.7}
             >
               <Text style={[
                 styles.pickerItemText,
@@ -115,7 +111,12 @@ const ScrollPicker: React.FC<ScrollPickerProps> = ({
           );
         })}
       </ScrollView>
-      {/* Selection highlight overlay */}
+
+      {/* Top fade */}
+      <View pointerEvents="none" style={styles.pickerFadeTop} />
+      {/* Bottom fade */}
+      <View pointerEvents="none" style={styles.pickerFadeBottom} />
+      {/* Center selection ring */}
       <View pointerEvents="none" style={[styles.pickerHighlight, { top: itemHeight * PADDING, height: itemHeight }]} />
     </View>
   );
@@ -126,22 +127,20 @@ interface HorizontalPickerProps {
   values: number[];
   selectedValue: number;
   onValueChange: (val: number) => void;
+  unit?: string;
 }
 
-const HorizontalPicker: React.FC<HorizontalPickerProps> = ({ values, selectedValue, onValueChange }) => {
-  const ITEM_WIDTH = 64;
-  const VISIBLE_ITEMS = 5;
-  const SIDE_PADDING = Math.floor(VISIBLE_ITEMS / 2) * ITEM_WIDTH; // 2 * 64 = 128
+const HorizontalPicker: React.FC<HorizontalPickerProps> = ({ values, selectedValue, onValueChange, unit }) => {
+  const ITEM_WIDTH = 72;
+  const SIDE_PADDING = (SCREEN_WIDTH - ITEM_WIDTH) / 2; // always center-align
 
   const scrollRef = useRef<ScrollView>(null);
   const isInitialized = useRef(false);
 
-  // Scroll to initial selectedValue on first mount
   useEffect(() => {
     if (!isInitialized.current) {
       const idx = values.indexOf(selectedValue);
       if (idx >= 0) {
-        // Small delay ensures layout is complete before scrollTo
         setTimeout(() => {
           scrollRef.current?.scrollTo({ x: idx * ITEM_WIDTH, animated: false });
           isInitialized.current = true;
@@ -149,6 +148,16 @@ const HorizontalPicker: React.FC<HorizontalPickerProps> = ({ values, selectedVal
       }
     }
   }, []);
+
+  // Re-sync scroll when values array changes (e.g. goal-based range restriction)
+  useEffect(() => {
+    const idx = values.indexOf(selectedValue);
+    if (idx >= 0) {
+      setTimeout(() => {
+        scrollRef.current?.scrollTo({ x: idx * ITEM_WIDTH, animated: false });
+      }, 50);
+    }
+  }, [values.length]);
 
   const handleScroll = useCallback((event: any) => {
     const offsetX = event.nativeEvent.contentOffset.x;
@@ -160,51 +169,65 @@ const HorizontalPicker: React.FC<HorizontalPickerProps> = ({ values, selectedVal
   }, [values, selectedValue, onValueChange]);
 
   return (
-    <View>
-      {/* Big selected number shown ABOVE the scroll bar */}
+    <View style={styles.hPickerContainer}>
+      {/* Large centered value display */}
       <View style={styles.hPickerValueBox}>
         <Text style={styles.hPickerBigText}>{selectedValue}</Text>
+        {unit ? <Text style={styles.hPickerUnitText}>{unit}</Text> : null}
       </View>
 
-      {/* Horizontal scroll strip showing adjacent numbers */}
-      <View style={styles.hPickerScrollRow}>
-        <View style={styles.hPickerLine} />
-        <View style={styles.hPickerScrollWrap}>
-          <ScrollView
-            ref={scrollRef}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            snapToInterval={ITEM_WIDTH}
-            decelerationRate="fast"
-            contentContainerStyle={{ paddingHorizontal: SIDE_PADDING }}
-            onMomentumScrollEnd={handleScroll}
-            onScrollEndDrag={handleScroll}
-            style={{ height: 44 }}
-          >
-            {values.map((item) => {
-              const isSelected = item === selectedValue;
-              return (
-                <TouchableOpacity
-                  key={item}
-                  style={[styles.hPickerItem, { width: ITEM_WIDTH }]}
-                  onPress={() => {
-                    onValueChange(item);
-                    const idx = values.indexOf(item);
-                    scrollRef.current?.scrollTo({ x: idx * ITEM_WIDTH, animated: true });
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <Text style={isSelected ? styles.hPickerItemSelected : styles.hPickerItemDim}>
-                    {item}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-          {/* Center highlight box — purely decorative, no text */}
-          <View pointerEvents="none" style={styles.hPickerCenterBox} />
-        </View>
-        <View style={styles.hPickerLine} />
+      {/* Ruler-style horizontal strip */}
+      <View style={styles.hPickerTrack}>
+        <ScrollView
+          ref={scrollRef}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          snapToInterval={ITEM_WIDTH}
+          decelerationRate={0.88}
+          contentContainerStyle={{ paddingHorizontal: SIDE_PADDING }}
+          onMomentumScrollEnd={handleScroll}
+          onScrollEndDrag={handleScroll}
+          style={{ height: 56 }}
+          scrollEventThrottle={16}
+        >
+          {values.map((item) => {
+            const isSelected = item === selectedValue;
+            const isNear = Math.abs(item - selectedValue) === 1;
+            return (
+              <TouchableOpacity
+                key={item}
+                style={[styles.hPickerItem, { width: ITEM_WIDTH }]}
+                onPress={() => {
+                  onValueChange(item);
+                  const idx = values.indexOf(item);
+                  scrollRef.current?.scrollTo({ x: idx * ITEM_WIDTH, animated: true });
+                }}
+                activeOpacity={0.6}
+              >
+                {/* Tick mark */}
+                <View style={[
+                  styles.hPickerTick,
+                  isSelected ? styles.hPickerTickSelected : isNear ? styles.hPickerTickNear : null,
+                ]} />
+                <Text style={[
+                  styles.hPickerItemText,
+                  isSelected ? styles.hPickerItemSelected
+                    : isNear ? styles.hPickerItemNear
+                    : styles.hPickerItemDim,
+                ]}>
+                  {item}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+
+        {/* Left fade */}
+        <View pointerEvents="none" style={styles.hPickerFadeLeft} />
+        {/* Right fade */}
+        <View pointerEvents="none" style={styles.hPickerFadeRight} />
+        {/* Center selection indicator */}
+        <View pointerEvents="none" style={styles.hPickerCenterIndicator} />
       </View>
     </View>
   );
@@ -226,6 +249,7 @@ interface OnboardingForm {
   hasTargetWeight: boolean;
   activityLevel: ActivityLevel | '';
   age: string;
+  aiDisclaimerAccepted: boolean;
 }
 
 const range = (start: number, end: number, step = 1) => {
@@ -318,6 +342,7 @@ const OnboardingScreen: React.FC<Props> = ({ navigation }) => {
     hasTargetWeight: true,
     activityLevel: '',
     age: '',
+    aiDisclaimerAccepted: false,
   });
 
   const update = <K extends keyof OnboardingForm>(key: K, val: OnboardingForm[K]) =>
@@ -344,14 +369,15 @@ const OnboardingScreen: React.FC<Props> = ({ navigation }) => {
   // Validate per-step before proceeding
   const canProceed = (): boolean => {
     switch (step) {
-      case 1: return form.name.trim().length >= 2;
-      case 2: return form.gender !== '';
-      case 3: return form.goals.length > 0;
-      case 4: return true;
+      case 1: return form.aiDisclaimerAccepted;        // must tick disclaimer
+      case 2: return form.name.trim().length >= 2;
+      case 3: return form.gender !== '';
+      case 4: return form.goals.length === 1;           // exactly one goal required
       case 5: return true;
       case 6: return true;
-      case 7: return form.activityLevel !== '';
-      case 8: {
+      case 7: return true;
+      case 8: return form.activityLevel !== '';
+      case 9: {
         const a = parseInt(form.age);
         return !isNaN(a) && a >= 10 && a <= 110;
       }
@@ -359,16 +385,15 @@ const OnboardingScreen: React.FC<Props> = ({ navigation }) => {
     }
   };
 
+  // All goals are single-select — tap to select, tap again to deselect
+  const SINGLE_SELECT_GOALS: Goal[] = GOAL_OPTIONS.map((o) => o.value);
+
   const toggleGoal = (goal: Goal) => {
     setForm((f) => {
-      if (f.goals.includes(goal)) {
-        return { ...f, goals: f.goals.filter((g) => g !== goal) };
-      }
-      if (f.goals.length >= 3) {
-        // Remove oldest, add new
-        return { ...f, goals: [...f.goals.slice(1), goal] };
-      }
-      return { ...f, goals: [...f.goals, goal] };
+      // Tap same → deselect
+      if (f.goals[0] === goal) return { ...f, goals: [] };
+      // Otherwise replace with the new single selection
+      return { ...f, goals: [goal] };
     });
   };
 
@@ -456,7 +481,40 @@ const OnboardingScreen: React.FC<Props> = ({ navigation }) => {
   const renderStep = () => {
     switch (step) {
       // ──────────────────────────────────────────────────────────────────────
+      // Step 1: AI Disclaimer — must accept before starting
       case 1:
+        return (
+          <View style={styles.stepContainer}>
+            <Text style={styles.questionTitle}>Before we start 🤖</Text>
+            <View style={styles.disclaimerCard}>
+              <Text style={styles.disclaimerEmoji}>⚠️</Text>
+              <Text style={styles.disclaimerTitle}>AI-Powered Tracking</Text>
+              <Text style={styles.disclaimerBody}>
+                Calitracs uses AI to estimate calories and macros from food descriptions and images.
+                {`\n\n`}
+                AI analysis can make mistakes — portion sizes, ingredients, and preparation methods can affect accuracy.
+                {`\n\n`}
+                Always cross-check results with a certified nutritionist or dietitian, especially if you have a medical condition.
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              style={styles.disclaimerCheckRow}
+              onPress={() => update('aiDisclaimerAccepted', !form.aiDisclaimerAccepted)}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.checkbox, form.aiDisclaimerAccepted && styles.checkboxChecked]}>
+                {form.aiDisclaimerAccepted && <Text style={styles.checkboxTick}>✓</Text>}
+              </View>
+              <Text style={styles.disclaimerCheckLabel}>
+                I understand that AI results may have errors and I will cross-check important data
+              </Text>
+            </TouchableOpacity>
+          </View>
+        );
+
+      // ──────────────────────────────────────────────────────────────────────
+      case 2:
         return (
           <View style={styles.stepContainer}>
             <Text style={styles.questionTitle}>What's your name?</Text>
@@ -476,7 +534,7 @@ const OnboardingScreen: React.FC<Props> = ({ navigation }) => {
         );
 
       // ──────────────────────────────────────────────────────────────────────
-      case 2:
+      case 3:
         return (
           <View style={styles.stepContainer}>
             <Text style={styles.questionTitle}>What's your gender?</Text>
@@ -501,36 +559,45 @@ const OnboardingScreen: React.FC<Props> = ({ navigation }) => {
         );
 
       // ──────────────────────────────────────────────────────────────────────
-      case 3:
+      case 4: {
+        const selectedGoal = form.goals[0] ?? null;
         return (
           <View style={styles.stepContainer}>
             <Text style={styles.questionTitle}>What's your goal?</Text>
-            <View style={styles.goalGrid}>
+            <View style={styles.goalList}>
               {GOAL_OPTIONS.map((opt) => {
-                const selected = form.goals.includes(opt.value);
+                const selected = selectedGoal === opt.value;
                 return (
                   <TouchableOpacity
                     key={opt.value}
-                    style={[styles.goalBubble, selected && styles.goalBubbleSelected]}
+                    style={[styles.goalCard, selected && styles.goalCardSelected]}
                     onPress={() => toggleGoal(opt.value)}
-                    activeOpacity={0.75}
+                    activeOpacity={0.7}
                   >
-                    <Text style={styles.goalEmoji}>{opt.emoji}</Text>
-                    <Text style={[styles.goalLabel, selected && styles.goalLabelSelected]}>
+                    <View style={[styles.goalCardIcon, selected && styles.goalCardIconSelected]}>
+                      <Text style={styles.goalCardEmoji}>{opt.emoji}</Text>
+                    </View>
+                    <Text style={[styles.goalCardLabel, selected && styles.goalCardLabelSelected]}>
                       {opt.label}
                     </Text>
+                    <View style={[styles.goalCardRadio, selected && styles.goalCardRadioSelected]}>
+                      {selected && <View style={styles.goalCardRadioDot} />}
+                    </View>
                   </TouchableOpacity>
                 );
               })}
             </View>
             <Text style={styles.goalHint}>
-              Pick up to <Text style={{ color: '#FF6B2C', fontFamily: FONTS.body.bold }}>3 goals</Text> that fit you best!
+              {selectedGoal
+                ? <Text style={{ color: '#FF6B2C', fontFamily: FONTS.body.bold }}>Tap again to deselect</Text>
+                : <>Tap to <Text style={{ color: '#FF6B2C', fontFamily: FONTS.body.bold }}>pick one</Text> goal</>}
             </Text>
           </View>
         );
+      }
 
       // ──────────────────────────────────────────────────────────────────────
-      case 4:
+      case 5:
         return (
           <View style={styles.stepContainer}>
             <Text style={styles.questionTitle}>What's your height?</Text>
@@ -579,7 +646,7 @@ const OnboardingScreen: React.FC<Props> = ({ navigation }) => {
         );
 
       // ──────────────────────────────────────────────────────────────────────
-      case 5:
+      case 6:
         return (
           <View style={styles.stepContainer}>
             <Text style={styles.questionTitle}>What's your current weight?</Text>
@@ -611,15 +678,48 @@ const OnboardingScreen: React.FC<Props> = ({ navigation }) => {
         );
 
       // ──────────────────────────────────────────────────────────────────────
-      case 6:
+      case 7: {
+        const primaryGoal6 = form.goals[0];
+        const isGainWeight = primaryGoal6 === 'gain_weight';
+        const isLoseFat = primaryGoal6 === 'lose_fat';
+
+        // Build the full weight range for the chosen unit
+        const fullRange6 = form.targetWeightUnit === 'kg' ? WEIGHT_KG : WEIGHT_LBS;
+
+        // Restrict the target weight range based on the primary goal
+        let targetWeightValues = fullRange6;
+        let hintText: string | null = null;
+
+        if (isGainWeight) {
+          // Target must be >= current weight
+          targetWeightValues = fullRange6.filter((v) => v >= form.weightKg);
+          hintText = 'Target must be higher than your current weight';
+        } else if (isLoseFat) {
+          // Target must be <= current weight
+          targetWeightValues = fullRange6.filter((v) => v <= form.weightKg);
+          hintText = 'Target must be lower than your current weight';
+        }
+
+        // Clamp the current target selection into the allowed range
+        const minAllowed6 = targetWeightValues[0] ?? fullRange6[0];
+        const maxAllowed6 = targetWeightValues[targetWeightValues.length - 1] ?? fullRange6[fullRange6.length - 1];
+        const clampedTarget6 = Math.max(minAllowed6, Math.min(form.targetWeightKg, maxAllowed6));
+        if (clampedTarget6 !== form.targetWeightKg) {
+          // Silently correct out-of-range value
+          setTimeout(() => update('targetWeightKg', clampedTarget6), 0);
+        }
+
         return (
           <View style={styles.stepContainer}>
             <Text style={styles.questionTitle}>What's your target weight?</Text>
             <HorizontalPicker
-              values={form.targetWeightUnit === 'kg' ? WEIGHT_KG : WEIGHT_LBS}
-              selectedValue={form.targetWeightKg}
+              values={targetWeightValues}
+              selectedValue={clampedTarget6}
               onValueChange={(v) => update('targetWeightKg', v)}
             />
+            {hintText && (
+              <Text style={styles.targetWeightHint}>{hintText}</Text>
+            )}
             <View style={styles.unitToggle}>
               {(['lbs', 'kg'] as const).map((u) => (
                 <TouchableOpacity
@@ -641,9 +741,10 @@ const OnboardingScreen: React.FC<Props> = ({ navigation }) => {
             </View>
           </View>
         );
+      }
 
       // ──────────────────────────────────────────────────────────────────────
-      case 7:
+      case 8:
         return (
           <View style={styles.stepContainer}>
             <Text style={styles.questionTitle}>What's your activity level?</Text>
@@ -675,7 +776,7 @@ const OnboardingScreen: React.FC<Props> = ({ navigation }) => {
         );
 
       // ──────────────────────────────────────────────────────────────────────
-      case 8:
+      case 9:
         return (
           <View style={styles.stepContainer}>
             <Text style={styles.questionTitle}>How old are you?</Text>
@@ -750,7 +851,7 @@ const OnboardingScreen: React.FC<Props> = ({ navigation }) => {
         </TouchableOpacity>
 
         {/* Prefer not to say (gender step only) */}
-        {step === 2 && (
+        {step === 3 && (
           <TouchableOpacity
             style={styles.secondaryBtn}
             onPress={() => { update('gender', 'prefer_not'); handleNext(); }}
@@ -761,7 +862,7 @@ const OnboardingScreen: React.FC<Props> = ({ navigation }) => {
         )}
 
         {/* Skip target weight */}
-        {step === 6 && (
+        {step === 7 && (
           <TouchableOpacity
             style={styles.secondaryBtn}
             onPress={() => { update('hasTargetWeight', false); handleNext(); }}
@@ -844,6 +945,72 @@ const styles = StyleSheet.create({
   },
 
   // ── Step 1 / Step 8 – Name / Age
+  // ── Step 1 – AI Disclaimer
+  disclaimerCard: {
+    backgroundColor: '#FFFBF5',
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: '#FFE0C2',
+    padding: 20,
+    gap: 10,
+    alignItems: 'center',
+  },
+  disclaimerEmoji: {
+    fontSize: 36,
+  },
+  disclaimerTitle: {
+    fontSize: 18,
+    fontFamily: FONTS.heading.bold,
+    color: '#1A1D2E',
+    textAlign: 'center',
+  },
+  disclaimerBody: {
+    fontSize: 14,
+    fontFamily: FONTS.body.regular,
+    color: '#475569',
+    lineHeight: 21,
+    textAlign: 'center',
+  },
+  disclaimerCheckRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 14,
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#FAFAFB',
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 7,
+    borderWidth: 2,
+    borderColor: '#CBD5E1',
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+    marginTop: 1,
+  },
+  checkboxChecked: {
+    backgroundColor: '#FF6B2C',
+    borderColor: '#FF6B2C',
+  },
+  checkboxTick: {
+    fontSize: 14,
+    color: '#FFFFFF',
+    fontFamily: FONTS.heading.bold,
+    lineHeight: 16,
+  },
+  disclaimerCheckLabel: {
+    flex: 1,
+    fontSize: 14,
+    fontFamily: FONTS.body.medium,
+    color: '#1A1D2E',
+    lineHeight: 21,
+  },
+
   inputBox: {
     borderWidth: 1.5,
     borderColor: '#E2E8F0',
@@ -894,64 +1061,91 @@ const styles = StyleSheet.create({
     color: ORANGE,
   },
 
-  // ── Step 3 – Goals
-  goalGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 16,
-    justifyContent: 'center',
+  // ── Step 3 – Goals (card list, single-select)
+  goalList: {
+    gap: 10,
   },
-  goalBubble: {
-    width: (SCREEN_WIDTH - 48 - 32) / 3,
-    aspectRatio: 1,
-    borderRadius: 100,
+  goalCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#FFFFFF',
+    gap: 14,
+  },
+  goalCardSelected: {
+    borderColor: ORANGE,
+    backgroundColor: ORANGE_LIGHT,
+    shadowColor: ORANGE,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  goalCardIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
     backgroundColor: '#F4F6FB',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
+  },
+  goalCardIconSelected: {
+    backgroundColor: 'rgba(255,107,44,0.15)',
+  },
+  goalCardEmoji: {
+    fontSize: 22,
+  },
+  goalCardLabel: {
+    flex: 1,
+    fontSize: 15,
+    fontFamily: FONTS.heading.semiBold,
+    color: '#1A1D2E',
+  },
+  goalCardLabelSelected: {
+    color: ORANGE,
+  },
+  goalCardRadio: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
     borderWidth: 2,
-    borderColor: 'transparent',
+    borderColor: '#CBD5E1',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  goalBubbleSelected: {
-    backgroundColor: ORANGE,
+  goalCardRadioSelected: {
     borderColor: ORANGE,
-    shadowColor: ORANGE,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 10,
-    elevation: 6,
   },
-  goalEmoji: {
-    fontSize: 26,
-  },
-  goalLabel: {
-    fontSize: 11,
-    fontFamily: FONTS.body.medium,
-    color: '#475569',
-    textAlign: 'center',
-    paddingHorizontal: 4,
-  },
-  goalLabelSelected: {
-    color: '#FFFFFF',
-    fontFamily: FONTS.body.bold,
+  goalCardRadioDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: ORANGE,
   },
   goalHint: {
     textAlign: 'center',
     fontSize: 14,
     fontFamily: FONTS.body.regular,
     color: '#64748B',
-    marginTop: -12,
+    marginTop: -4,
+  },
+  targetWeightHint: {
+    textAlign: 'center',
+    fontSize: 13,
+    fontFamily: FONTS.body.regular,
+    color: '#FF6B2C',
+    marginTop: -16,
+    paddingHorizontal: 12,
   },
 
-  // ── Steps 4-6 – Pickers
+  // ── Vertical Picker
   pickerItem: {
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  pickerItemSelected: {
-    backgroundColor: '#FAFAFB',
-    borderRadius: 14,
-    marginHorizontal: 12,
   },
   pickerItemText: {
     fontFamily: FONTS.heading.bold,
@@ -961,78 +1155,163 @@ const styles = StyleSheet.create({
     color: '#1A1D2E',
   },
   pickerItemTextDim: {
-    fontSize: 22,
-    color: '#CBD5E1',
+    fontSize: 20,
+    color: '#D1D9E6',
   },
   pickerHighlight: {
     position: 'absolute',
-    left: 16,
-    right: 16,
-    borderRadius: 14,
-    borderWidth: 1.5,
-    borderColor: '#E2E8F0',
-    backgroundColor: 'transparent',
+    left: 20,
+    right: 20,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: ORANGE,
+    backgroundColor: 'rgba(255,107,44,0.04)',
   },
+  pickerFadeTop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 80,
+    backgroundColor: 'transparent',
+    // Simulate gradient via a semi-opaque white overlay
+    borderTopLeftRadius: 8,
+    borderTopRightRadius: 8,
+    opacity: 0.85,
+    // Use background gradient workaround: solid white tapering with shadow
+    shadowColor: '#FFFFFF',
+    shadowOffset: { width: 0, height: 40 },
+    shadowOpacity: 1,
+    shadowRadius: 40,
+    elevation: 0,
+  } as any,
+  pickerFadeBottom: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 80,
+    backgroundColor: 'transparent',
+    borderBottomLeftRadius: 8,
+    borderBottomRightRadius: 8,
+    opacity: 0.85,
+    shadowColor: '#FFFFFF',
+    shadowOffset: { width: 0, height: -40 },
+    shadowOpacity: 1,
+    shadowRadius: 40,
+    elevation: 0,
+  } as any,
 
-  // Horizontal picker — clean separated layout
+  // ── Horizontal Picker (ruler-style)
+  hPickerContainer: {
+    gap: 16,
+  },
   hPickerValueBox: {
     alignItems: 'center',
     justifyContent: 'center',
+    alignSelf: 'center',
     backgroundColor: '#FAFAFB',
-    borderRadius: 16,
+    borderRadius: 20,
     borderWidth: 1.5,
     borderColor: '#E2E8F0',
-    paddingVertical: 18,
-    paddingHorizontal: 24,
-    alignSelf: 'center',
-    minWidth: 120,
-    marginBottom: 20,
+    paddingVertical: 20,
+    paddingHorizontal: 36,
+    minWidth: 140,
   },
   hPickerBigText: {
-    fontSize: 52,
+    fontSize: 56,
     fontFamily: FONTS.heading.bold,
     color: '#1A1D2E',
     textAlign: 'center',
+    lineHeight: 64,
   },
-  hPickerScrollRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  hPickerUnitText: {
+    fontSize: 16,
+    fontFamily: FONTS.body.medium,
+    color: '#94A3B8',
+    textAlign: 'center',
+    marginTop: 2,
   },
-  hPickerLine: {
-    flex: 1,
-    height: 1.5,
-    backgroundColor: '#E2E8F0',
-  },
-  hPickerScrollWrap: {
+  hPickerTrack: {
     position: 'relative',
-    width: 320,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#FAFAFB',
   },
-  hPickerCenterBox: {
+  hPickerItem: {
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    paddingBottom: 6,
+    height: 56,
+  },
+  hPickerTick: {
+    width: 1.5,
+    height: 10,
+    backgroundColor: '#D1D9E6',
+    borderRadius: 1,
+    marginBottom: 4,
+  },
+  hPickerTickSelected: {
+    width: 2.5,
+    height: 18,
+    backgroundColor: ORANGE,
+  },
+  hPickerTickNear: {
+    height: 14,
+    backgroundColor: '#94A3B8',
+  },
+  hPickerItemText: {
+    fontFamily: FONTS.heading.bold,
+  },
+  hPickerItemSelected: {
+    fontSize: 18,
+    color: ORANGE,
+  },
+  hPickerItemNear: {
+    fontSize: 14,
+    color: '#475569',
+  },
+  hPickerItemDim: {
+    fontSize: 12,
+    color: '#CBD5E1',
+  },
+  hPickerFadeLeft: {
     position: 'absolute',
     top: 0,
     bottom: 0,
-    left: '50%',
-    marginLeft: -32,
-    width: 64,
-    borderRadius: 10,
-    borderWidth: 2,
-    borderColor: ORANGE,
+    left: 0,
+    width: 72,
+    // Simulate left-to-right white fade
     backgroundColor: 'transparent',
+    shadowColor: '#FAFAFB',
+    shadowOffset: { width: 40, height: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 24,
   } as any,
-  hPickerItem: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: 44,
-  },
-  hPickerItemSelected: {
-    fontSize: 20,
-    fontFamily: FONTS.heading.bold,
-    color: ORANGE,
-  },
-  hPickerItemDim: {
-    fontSize: 16,
-    fontFamily: FONTS.heading.regular,
-    color: '#CBD5E1',
+  hPickerFadeRight: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    right: 0,
+    width: 72,
+    backgroundColor: 'transparent',
+    shadowColor: '#FAFAFB',
+    shadowOffset: { width: -40, height: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 24,
+  } as any,
+  hPickerCenterIndicator: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: '50%' as any,
+    marginLeft: -36,
+    width: 72,
+    borderLeftWidth: 2,
+    borderRightWidth: 2,
+    borderColor: ORANGE,
+    backgroundColor: 'rgba(255,107,44,0.04)',
   },
 
   unitSubLabel: {

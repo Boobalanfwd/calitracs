@@ -38,6 +38,8 @@ export interface UserProfile {
   streakDays?: number;
   weightHistory?: WeightEntry[];
   avatarUrl?: string;  // Cloudinary profile picture URL
+  hapticsEnabled?: boolean; // haptic feedback preference
+  analyticsEnabled?: boolean; // analytics/crash reports preference
 }
 
 
