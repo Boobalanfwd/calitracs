@@ -1,5 +1,6 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
+import Constants, { ExecutionEnvironment } from 'expo-constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { todayDateKey } from '../utils/dates';
 
@@ -100,13 +101,13 @@ class NotificationService {
 
       this.hasPermission = true;
 
-      if (Platform.OS === 'android') {
+      if (
+        Platform.OS === 'android' &&
+        Constants.executionEnvironment !== ExecutionEnvironment.StoreClient
+      ) {
         await Notifications.setNotificationChannelAsync('default', {
           name: 'Calitracs Reminders',
           importance: Notifications.AndroidImportance.MAX,
-          vibrationPattern: [0, 250, 250, 250],
-          lightColor: '#FF6B00',
-          sound: 'default',
         });
       }
 

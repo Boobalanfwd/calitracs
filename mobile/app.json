@@ -67,7 +67,11 @@
           "icon": "./assets/icon.png",
           "color": "#FF6B00"
         }
-      ]
+      ],
+      "expo-font",
+      "expo-secure-store",
+      "expo-splash-screen",
+      "expo-status-bar"
     ],
     "extra": {
       "eas": {

@@ -39,6 +39,14 @@ const imageUriToBase64 = async (uri: string): Promise<string> => {
 const SLOW_API_MS = 1500;
 
 // Production helper: fetch with default 15s timeout
+const parseJson = async (response: Response): Promise<any> => {
+  try {
+    return await response.json();
+  } catch {
+    throw new Error(`Backend returned a non-JSON response (${response.status}). Check the API URL and backend deployment.`);
+  }
+};
+
 const fetchWithTimeout = async (url: string, options: RequestInit = {}, timeoutMs = 15000): Promise<Response> => {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -110,7 +118,7 @@ export const API = {
         }),
       }, 45000); // 45s timeout for AI + nutrition lookup
 
-      const data: AnalysisResult = await response.json();
+      const data: AnalysisResult = await parseJson(response);
 
       if (!response.ok) {
         return {
@@ -159,7 +167,7 @@ export const API = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, email, password }),
     });
-    const data = await res.json();
+    const data = await parseJson(res);
     if (!res.ok || !data.success) throw new Error(data.error || 'Registration failed');
     return data;
   },
@@ -170,7 +178,7 @@ export const API = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
     });
-    const data = await res.json();
+    const data = await parseJson(res);
     if (!res.ok || !data.success) throw new Error(data.error || 'Login failed');
     return data;
   },
@@ -180,7 +188,7 @@ export const API = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
     });
-    const data = await res.json();
+    const data = await parseJson(res);
     if (!res.ok || !data.success) throw new Error(data.error || 'Guest login failed');
     return data;
   },
@@ -189,7 +197,7 @@ export const API = {
     const res = await fetchWithTimeout(`${API_BASE_URL}/api/auth/me`, {
       headers: { Authorization: `Bearer ${token}` },
     });
-    const data = await res.json();
+    const data = await parseJson(res);
     if (!res.ok || !data.success) {
       const err: any = new Error(data.error || 'Failed to fetch user profile');
       err.status = res.status;
@@ -207,7 +215,7 @@ export const API = {
       },
       body: JSON.stringify(profileData),
     });
-    const data = await res.json();
+    const data = await parseJson(res);
     if (!res.ok || !data.success) throw new Error(data.error || 'Failed to update profile');
     return data;
   },
@@ -221,7 +229,7 @@ export const API = {
       },
       body: JSON.stringify({ name, email, password }),
     });
-    const data = await res.json();
+    const data = await parseJson(res);
     if (!res.ok || !data.success) throw new Error(data.error || 'Failed to convert guest session');
     return data;
   },
@@ -231,7 +239,7 @@ export const API = {
     const res = await fetchWithTimeout(`${API_BASE_URL}/api/targets`, {
       headers: { Authorization: `Bearer ${token}` },
     });
-    const data = await res.json();
+    const data = await parseJson(res);
     if (!res.ok || !data.success) throw new Error(data.error || 'Failed to fetch targets');
     return data.targets;
   },
@@ -245,7 +253,7 @@ export const API = {
       },
       body: JSON.stringify(targets),
     });
-    const data = await res.json();
+    const data = await parseJson(res);
     if (!res.ok || !data.success) throw new Error(data.error || 'Failed to update targets');
     return data.targets;
   },
@@ -255,7 +263,7 @@ export const API = {
     const res = await fetchWithTimeout(`${API_BASE_URL}/api/logs/${date}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
-    const data = await res.json();
+    const data = await parseJson(res);
     if (!res.ok || !data.success) throw new Error(data.error || 'Failed to fetch log');
     return data;
   },
@@ -290,7 +298,7 @@ export const API = {
       },
       body: JSON.stringify(entry),
     });
-    const data = await res.json();
+    const data = await parseJson(res);
     if (!res.ok || !data.success) throw new Error(data.error || 'Failed to add food entry');
     return data;
   },
@@ -303,7 +311,7 @@ export const API = {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${token}` },
     });
-    const data = await res.json();
+    const data = await parseJson(res);
     if (!res.ok || !data.success) throw new Error(data.error || 'Failed to delete entry');
     return data;
   },
@@ -320,7 +328,7 @@ export const API = {
       },
       body: JSON.stringify(params),
     });
-    const data = await res.json();
+    const data = await parseJson(res);
     if (!res.ok || !data.success) throw new Error(data.error || 'Failed to update water intake');
     return data;
   },
@@ -333,7 +341,7 @@ export const API = {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${token}` },
     });
-    const data = await res.json();
+    const data = await parseJson(res);
     if (!res.ok || !data.success) throw new Error(data.error || 'Failed to delete water entry');
     return data;
   },
@@ -353,7 +361,7 @@ export const API = {
     const res = await fetchWithTimeout(url, {
       headers: { Authorization: `Bearer ${token}` },
     });
-    const data = await res.json();
+    const data = await parseJson(res);
     if (!res.ok || !data.success) throw new Error(data.error || 'Failed to fetch weekly water data');
     return data;
   },
@@ -362,7 +370,7 @@ export const API = {
     const res = await fetchWithTimeout(`${API_BASE_URL}/api/logs/calendar/${year}/${month}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
-    const data = await res.json();
+    const data = await parseJson(res);
     if (!res.ok || !data.success) throw new Error(data.error || 'Failed to fetch calendar data');
     return data;
   },
@@ -374,7 +382,7 @@ export const API = {
       headers: withAuth({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ items }),
     });
-    const data = await res.json();
+    const data = await parseJson(res);
     if (!res.ok || !data.success) throw new Error(data.error || 'Failed to auto-calculate nutrition');
     return data;
   },
@@ -386,7 +394,7 @@ export const API = {
       headers: withAuth({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ barcode }),
     });
-    const data = await res.json();
+    const data = await parseJson(res);
     if (!res.ok || !data.success) throw new Error(data.error || 'Barcode item not found');
     return data.product;
   },
@@ -404,7 +412,7 @@ export const API = {
         headers: withAuth({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ imageBase64: base64Data, mimeType: 'image/jpeg' }),
       }, 45000);
-    const data = await res.json();
+    const data = await parseJson(res);
     if (!res.ok || !data.success) throw new Error(data.error || 'Failed to read nutrition label');
     return data.item;
   },
@@ -422,7 +430,7 @@ export const API = {
         headers: withAuth({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ imageBase64: base64Data, mimeType: 'image/jpeg' }),
       }, 45000);
-    const data = await res.json();
+    const data = await parseJson(res);
     if (!res.ok || !data.success) throw new Error(data.error || 'Failed to detect food items');
     return data;
   },
@@ -441,7 +449,7 @@ export const API = {
         headers: withAuth({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ imageBase64: base64Data }),
       }, 30000);
-      const data = await res.json();
+      const data = await parseJson(res);
       return data.imageUrl || null;
     } catch (e) {
       console.warn('[API uploadFoodImage Error]:', e);
@@ -461,7 +469,7 @@ export const API = {
         },
         body: JSON.stringify({ imageBase64: base64Data, mimeType: 'image/jpeg' }),
       }, 30000);
-      const data = await res.json();
+      const data = await parseJson(res);
       if (!res.ok || !data.success) throw new Error(data.error || 'Upload failed');
       return data.avatarUrl || null;
     } catch (e: any) {
@@ -482,7 +490,7 @@ export const API = {
       headers: withAuth({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ baseNutrition, unit, quantity, customEquivGramsOrMl }),
     });
-    const data = await res.json();
+    const data = await parseJson(res);
     if (!res.ok || !data.success) throw new Error(data.error || 'Failed to convert portion');
     return data.result;
   },

@@ -1,8 +1,9 @@
 import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 
 const PRODUCTION_API_URL = 'https://calitracs-backend.onrender.com';
 const LOCAL_IP = '192.168.5.9';
-const PORT = 3001;
+const PORT = 3002;
 
 export const getApiBaseUrl = (): string => {
   const envUrl = process.env.EXPO_PUBLIC_API_URL;
@@ -19,7 +20,14 @@ export const getApiBaseUrl = (): string => {
     const host = window.location.hostname || 'localhost';
     return `http://${host}:${PORT}`;
   }
-  return `http://${LOCAL_IP}:${PORT}`;
+
+  // In development, use the same LAN host Metro advertises to the device.
+  // This avoids a stale hard-coded IP when the computer changes networks.
+  const hostUri = Constants.expoConfig?.hostUri;
+  const metroHost = hostUri
+    ? new URL(`http://${hostUri}`).hostname.replace(/^\[|\]$/g, '')
+    : undefined;
+  return `http://${metroHost || LOCAL_IP}:${PORT}`;
 };
 
 export const API_BASE_URL = getApiBaseUrl();

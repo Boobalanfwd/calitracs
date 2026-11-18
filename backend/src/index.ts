@@ -19,7 +19,9 @@ import { info, warn, captureError } from './utils/logger';
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+// Port 3001 is commonly used by other local projects. Keep this service on
+// 3002 by default; PORT can still override it in deployment environments.
+const PORT = process.env.PORT || 3002;
 
 // Behind a reverse proxy (Render/nginx) so rate limiting sees the real client IP.
 app.set('trust proxy', 1);

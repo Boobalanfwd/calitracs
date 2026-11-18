@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
+import Constants, { ExecutionEnvironment } from 'expo-constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_BASE_URL } from '../config';
 import { navigationRef } from '../navigation/navigationRef';
@@ -72,14 +73,20 @@ export function usePushNotifications(authToken: string | null) {
         }
 
         // 2. Android notification channel
-        if (Platform.OS === 'android') {
-          await Notifications.setNotificationChannelAsync('default', {
-            name: 'Calitracs',
-            importance: Notifications.AndroidImportance.MAX,
-            vibrationPattern: [0, 250, 250, 250],
-            lightColor: '#FF6B00',
-            sound: 'default',
-          });
+        if (
+          Platform.OS === 'android' &&
+          Constants.executionEnvironment !== ExecutionEnvironment.StoreClient
+        ) {
+          try {
+            await Notifications.setNotificationChannelAsync('default', {
+              name: 'Calitracs',
+              importance: Notifications.AndroidImportance.MAX,
+            });
+          } catch (err: any) {
+            // A channel is optional for the UI and should never block app startup
+            // or token setup when the native notifications module is unavailable.
+            console.warn('[usePushNotifications] Android channel setup unavailable:', err.message);
+          }
         }
 
         // 3. Get Expo push token
